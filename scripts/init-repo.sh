@@ -15,9 +15,10 @@
 #      template-only README block and itself, then commits (signed off) and pushes to main;
 #   2. creates the triage labels from .github/triage/labels.json, plus `new`,
 #      `release-gating`, `research` and `accessibility`;
-#   3. turns off the wiki and turns on private vulnerability reporting, Dependabot alerts
-#      and security updates, secret scanning with push protection, a read-only Actions
-#      token, and the immutable OIDC subject;
+#   3. turns off the wiki, deletes a PR's branch when it merges, and turns on private
+#      vulnerability reporting, Dependabot alerts and security updates, secret scanning
+#      with push protection and generic-secret patterns, a read-only Actions token, and
+#      the immutable OIDC subject;
 #   4. protects main: PRs required; the checks in REQUIRED_CHECKS required; admins
 #      included; conversations resolved; no force-push or deletion;
 #   5. prints what is left to do by hand to turn on automated issue triage.
@@ -180,20 +181,27 @@ done
 echo "Labels ready"
 
 # --- 3. repo settings ---------------------------------------------------------------
-gh repo edit "$REPO" --enable-wiki=false >/dev/null
+# Deleting merged branches also lets GitHub move a stacked PR onto main when its base
+# merges; with the base branch left behind, the stacked PR merges into it instead.
+gh repo edit "$REPO" --enable-wiki=false --delete-branch-on-merge >/dev/null
 gh api -X PUT "repos/$REPO/private-vulnerability-reporting" >/dev/null
 gh api -X PUT "repos/$REPO/vulnerability-alerts" >/dev/null
 gh api -X PUT "repos/$REPO/automated-security-fixes" >/dev/null
 gh api -X PATCH "repos/$REPO" --input - >/dev/null <<'JSON'
 {"security_and_analysis": {"secret_scanning": {"status": "enabled"},
-                           "secret_scanning_push_protection": {"status": "enabled"}}}
+                           "secret_scanning_push_protection": {"status": "enabled"},
+                           "secret_scanning_non_provider_patterns": {"status": "enabled"}}}
 JSON
+# Generic patterns (private keys, connection strings, passwords) are accepted but left
+# off for repos on a personal account, so report what GitHub actually did.
+GENERIC="$(gh api "repos/$REPO" --jq '.security_and_analysis.secret_scanning_non_provider_patterns.status // "unavailable"')"
 gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
   -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false >/dev/null
 gh api -X PUT "repos/$REPO/actions/oidc/customization/sub" \
   -F use_default=true -F use_immutable_subject=true >/dev/null
-echo "Wiki off; vulnerability reporting, Dependabot security updates, secret scanning on;"
-echo "  read-only Actions token; immutable OIDC subject"
+echo "Wiki off; merged branches deleted; vulnerability reporting, Dependabot security"
+echo "  updates, secret scanning on; read-only Actions token; immutable OIDC subject"
+echo "  Generic-secret scanning: ${GENERIC:-unknown} (GitHub leaves it off for personal-account repos)"
 
 # --- 4. branch protection -----------------------------------------------------------
 CONTEXTS="$(printf '"%s",' "${REQUIRED_CHECKS[@]}")"

@@ -31,12 +31,13 @@
 > `init-repo.sh` asks for the license (Apache-2.0 by default), the contact address for
 > conduct and policy reports, and the package ecosystem for Dependabot. It replaces the
 > `{{…}}` placeholders and commits and pushes that once to `main`, removing itself and this
-> block. It then creates the labels, turns on the security settings (vulnerability
-> reporting, Dependabot security updates, secret scanning with push protection, a read-only
-> Actions token, the immutable OIDC subject), and protects `main` (PRs required; `dco`,
-> `docs-check`, `docs-immutability`, `gate` and `require-linked-issue` required; admins
-> included). GitHub doesn't copy labels, settings or protection rules from a template,
-> which is why the script exists. At the end it prints what is left to do by hand.
+> block. It then creates the labels, deletes branches after merge, turns on the security
+> settings (vulnerability reporting, Dependabot security updates, secret scanning with push
+> protection and generic-secret patterns, a read-only Actions token, the immutable OIDC
+> subject), and protects `main` (PRs required; `dco`, `docs-check`, `docs-immutability`,
+> `gate` and `require-linked-issue` required; admins included). GitHub doesn't copy
+> labels, settings or protection rules from a template, which is why the script exists. At
+> the end it prints what is left to do by hand.
 <!-- template:end -->
 
 ## Status
