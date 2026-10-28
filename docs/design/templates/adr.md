@@ -1,7 +1,10 @@
 ---
 created: <DD.MM.YYYY HH:MM>
 type: adr
-status: Proposed   # Proposed | Accepted | Superseded by ADR-NNNN
+# status: Proposed, then Accepted; Superseded (with superseded-by: NNNN) when a later ADR
+# replaces it (ADR-0001, ADR-0004). Keep comments off the status line: the immutability
+# check reads the whole value.
+status: Proposed
 tags:
   - adr
 ---
