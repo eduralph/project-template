@@ -23,8 +23,10 @@ This appends a `Signed-off-by: Your Name <you@example.com>` trailer (using your
 
 ## Pull requests
 
-- Code changes link an agreed issue in the PR description (`Closes #NNN` or `Refs #NNN`).
-  PRs without one get the `needs-issue` label. Typo and docs fixes don't need an issue.
+- **Every pull request links an issue**, typo and docs fixes included: `Closes #NNN`, or
+  `Refs #NNN` for partial work, in the description. This project is stricter than the
+  shared guide here; the required `require-linked-issue` check fails a PR without one.
+  For a small fix, a one-line issue is enough. Dependabot's PRs are exempt.
 - One logical change per PR; split unrelated changes.
 - A change ships with the means to verify it: a test, or a stated reason why a test is
   impractical plus a manual repro.
@@ -32,6 +34,13 @@ This appends a `Signed-off-by: Your Name <you@example.com>` trailer (using your
   settled design question becomes an ADR. See [`docs/design/README.md`](docs/design/README.md)
   for which document class to use; accepted ADRs and proposals and stable specs are never
   edited, only superseded.
+
+## Issues
+
+New issues are triaged by the rules in [ADR-0005](docs/design/adr/0005-issue-priority-and-automated-triage.md):
+severity and reach set a `priority:P0`–`P3` label. If automated triage is set up, a bot
+labels the issue and posts its reasons; a maintainer makes the final call and sets the
+milestone. Report security problems privately (see [SECURITY.md](SECURITY.md)).
 
 ## Running checks
 
