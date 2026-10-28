@@ -18,12 +18,15 @@
 #   3. turns off the wiki and turns on private vulnerability reporting, Dependabot alerts
 #      and security updates, secret scanning with push protection, a read-only Actions
 #      token, and the immutable OIDC subject;
-#   4. protects main: PRs required; `dco`, `docs-immutability` and `require-linked-issue`
-#      required; admins included; conversations resolved; no force-push or deletion;
+#   4. protects main: PRs required; the checks in REQUIRED_CHECKS required; admins
+#      included; conversations resolved; no force-push or deletion;
 #   5. prints what is left to do by hand to turn on automated issue triage.
 #
 # Steps 2-5 are idempotent; re-running after step 1 only re-applies settings.
 set -euo pipefail
+
+# The status checks main requires; each is a job in .github/workflows/.
+REQUIRED_CHECKS=(dco docs-check docs-immutability require-linked-issue)
 
 die() { echo "init-repo: $*" >&2; exit 1; }
 
@@ -193,10 +196,10 @@ echo "Wiki off; vulnerability reporting, Dependabot security updates, secret sca
 echo "  read-only Actions token; immutable OIDC subject"
 
 # --- 4. branch protection -----------------------------------------------------------
-gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<'JSON'
+CONTEXTS="$(printf '"%s",' "${REQUIRED_CHECKS[@]}")"
+gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<JSON
 {
-  "required_status_checks": {"strict": false,
-                             "contexts": ["dco", "docs-immutability", "require-linked-issue"]},
+  "required_status_checks": {"strict": false, "contexts": [${CONTEXTS%,}]},
   "enforce_admins": true,
   "required_pull_request_reviews": {"required_approving_review_count": 0},
   "restrictions": null,
@@ -205,8 +208,8 @@ gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<'
   "allow_deletions": false
 }
 JSON
-echo "Branch protection on $BRANCH: PRs required; dco, docs-immutability and"
-echo "  require-linked-issue required; admins included"
+echo "Branch protection on $BRANCH: PRs required; ${REQUIRED_CHECKS[*]} required;"
+echo "  admins included"
 
 # --- 5. what is left by hand ---------------------------------------------------------
 SUBJECT="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_prefix)"

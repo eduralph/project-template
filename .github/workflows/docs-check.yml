@@ -1,0 +1,42 @@
+name: docs-check
+
+# Every relative link in a tracked Markdown file must point at a tracked file or
+# directory (.github/docs-check/docs_links.py, taken from nl-shell). A required status
+# check on `main` (init-repo.sh sets it). No path filter, so it always reports.
+# `pull_request` only, never `pull_request_target`: this runs PR-supplied code.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docs-check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      # The checker's own tests, so a change to it is tested before it gates anything.
+      - name: Test the link checker
+        run: python3 -I -m unittest discover -s .github/docs-check -v
+      # Runs the BASE commit's copy of the checker, so a PR cannot switch off its own
+      # check by editing it. Only the PR that first adds the checker runs its own copy.
+      # `-I` (isolated mode) keeps the checkout off sys.path, so a PR cannot plant a
+      # module such as `re.py` that the checker would import instead of the stdlib.
+      - name: Relative links resolve
+        env:
+          BASE: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          checker=.github/docs-check/docs_links.py
+          if git cat-file -e "$BASE:$checker" 2>/dev/null; then
+            echo "Running $checker from the base commit $BASE"
+            git show "$BASE:$checker" | python3 -I -
+          else
+            echo "$checker is not on the base; running the PR's copy"
+            python3 -I "$checker"
+          fi

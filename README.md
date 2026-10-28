@@ -34,7 +34,8 @@
 > block. It then creates the labels, turns on the security settings (vulnerability
 > reporting, Dependabot security updates, secret scanning with push protection, a read-only
 > Actions token, the immutable OIDC subject), and protects `main` (PRs required; `dco`,
-> `docs-immutability` and `require-linked-issue` required; admins included). GitHub doesn't
+> `docs-check`, `docs-immutability` and `require-linked-issue` required; admins included).
+> GitHub doesn't
 > copy labels, settings or protection rules from a template, which is why the script
 > exists. At the end it prints what is left to do by hand.
 <!-- template:end -->
