@@ -44,4 +44,6 @@ milestone. Report security problems privately (see [SECURITY.md](SECURITY.md)).
 
 ## Running checks
 
-_TODO: name the single command that runs the checks once they exist._
+_TODO: name the single command that runs every check._ The required `gate` job in
+[`.github/workflows/ci.yml`](.github/workflows/ci.yml) runs the same command; until it is
+set up, `gate` fails every pull request.

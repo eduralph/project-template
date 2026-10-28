@@ -62,6 +62,9 @@ agent-specific discipline.
     the current system; update it in the same PR whenever the system changes.
   - **Review** (`docs/design/reviews/`) — a dated go/no-go or readiness assessment.
 - **Start from the template** in `docs/design/templates/` and add a row to the class index.
+- **Keep relative links working.** `docs-check` fails a PR with a Markdown link to a file or
+  directory that isn't in the repo; run `python3 -I .github/docs-check/docs_links.py` before
+  pushing a rename.
 - **Changing a ratified doc = supersede, never rewrite.** Once an ADR is Accepted, a
   proposal accepted or a spec stable, its file is frozen (`docs-immutability` enforces
   this). To change it, write a **new** doc carrying `supersedes: <old>`, change only the old

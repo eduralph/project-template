@@ -12,18 +12,23 @@
 #      package ecosystem for Dependabot (PROJECT_ECOSYSTEM: pip, cargo, npm, gomod or
 #      none); writes LICENSE (and NOTICE for Apache-2.0 only), fills the {{...}}
 #      placeholders in every tracked file from the GitHub repo + git config, drops the
-#      template-only README block and itself, then commits (signed off) and pushes to main;
+#      template-only README block, its own test (.github/template-test/) and itself, then
+#      commits (signed off) and pushes to main;
 #   2. creates the triage labels from .github/triage/labels.json, plus `new`,
 #      `release-gating`, `research` and `accessibility`;
-#   3. turns off the wiki and turns on private vulnerability reporting, Dependabot alerts
-#      and security updates, secret scanning with push protection, a read-only Actions
-#      token, and the immutable OIDC subject;
-#   4. protects main: PRs required; `dco`, `docs-immutability` and `require-linked-issue`
-#      required; admins included; conversations resolved; no force-push or deletion;
+#   3. turns off the wiki, deletes a PR's branch when it merges, and turns on private
+#      vulnerability reporting, Dependabot alerts and security updates, secret scanning
+#      with push protection and generic-secret patterns, a read-only Actions token, and
+#      the immutable OIDC subject;
+#   4. protects main: PRs required; the checks in REQUIRED_CHECKS required; admins
+#      included; conversations resolved; no force-push or deletion;
 #   5. prints what is left to do by hand to turn on automated issue triage.
 #
 # Steps 2-5 are idempotent; re-running after step 1 only re-applies settings.
 set -euo pipefail
+
+# The status checks main requires; each is a job in .github/workflows/.
+REQUIRED_CHECKS=(dco docs-check docs-immutability gate require-linked-issue)
 
 die() { echo "init-repo: $*" >&2; exit 1; }
 
@@ -117,6 +122,9 @@ PY
     git rm -q NOTICE
   fi
 
+  # Files that only make sense in the template repository: its own test of this script.
+  git rm -rq .github/template-test .github/workflows/template-test.yml
+
   echo "Filling placeholders for $REPO"
   python3 -I - "$NAME" "$DESCRIPTION" "$OWNER" "$YEAR" "$AUTHOR" "$LICENSE_NAME" "$DATE" \
     "$CONTACT" "$MAINTAINER" <<'PY'
@@ -177,26 +185,33 @@ done
 echo "Labels ready"
 
 # --- 3. repo settings ---------------------------------------------------------------
-gh repo edit "$REPO" --enable-wiki=false >/dev/null
+# Deleting merged branches also lets GitHub move a stacked PR onto main when its base
+# merges; with the base branch left behind, the stacked PR merges into it instead.
+gh repo edit "$REPO" --enable-wiki=false --delete-branch-on-merge >/dev/null
 gh api -X PUT "repos/$REPO/private-vulnerability-reporting" >/dev/null
 gh api -X PUT "repos/$REPO/vulnerability-alerts" >/dev/null
 gh api -X PUT "repos/$REPO/automated-security-fixes" >/dev/null
 gh api -X PATCH "repos/$REPO" --input - >/dev/null <<'JSON'
 {"security_and_analysis": {"secret_scanning": {"status": "enabled"},
-                           "secret_scanning_push_protection": {"status": "enabled"}}}
+                           "secret_scanning_push_protection": {"status": "enabled"},
+                           "secret_scanning_non_provider_patterns": {"status": "enabled"}}}
 JSON
+# Generic patterns (private keys, connection strings, passwords) are accepted but left
+# off for repos on a personal account, so report what GitHub actually did.
+GENERIC="$(gh api "repos/$REPO" --jq '.security_and_analysis.secret_scanning_non_provider_patterns.status // "unavailable"')"
 gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
   -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false >/dev/null
 gh api -X PUT "repos/$REPO/actions/oidc/customization/sub" \
   -F use_default=true -F use_immutable_subject=true >/dev/null
-echo "Wiki off; vulnerability reporting, Dependabot security updates, secret scanning on;"
-echo "  read-only Actions token; immutable OIDC subject"
+echo "Wiki off; merged branches deleted; vulnerability reporting, Dependabot security"
+echo "  updates, secret scanning on; read-only Actions token; immutable OIDC subject"
+echo "  Generic-secret scanning: ${GENERIC:-unknown} (GitHub leaves it off for personal-account repos)"
 
 # --- 4. branch protection -----------------------------------------------------------
-gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<'JSON'
+CONTEXTS="$(printf '"%s",' "${REQUIRED_CHECKS[@]}")"
+gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<JSON
 {
-  "required_status_checks": {"strict": false,
-                             "contexts": ["dco", "docs-immutability", "require-linked-issue"]},
+  "required_status_checks": {"strict": false, "contexts": [${CONTEXTS%,}]},
   "enforce_admins": true,
   "required_pull_request_reviews": {"required_approving_review_count": 0},
   "restrictions": null,
@@ -205,14 +220,17 @@ gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<'
   "allow_deletions": false
 }
 JSON
-echo "Branch protection on $BRANCH: PRs required; dco, docs-immutability and"
-echo "  require-linked-issue required; admins included"
+echo "Branch protection on $BRANCH: PRs required; ${REQUIRED_CHECKS[*]} required;"
+echo "  admins included"
 
 # --- 5. what is left by hand ---------------------------------------------------------
 SUBJECT="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_prefix)"
 cat <<EOF
 
 Done. Left to do by hand:
+  - Set up the project's checks: replace the placeholder step in
+    .github/workflows/ci.yml and name the same command in CONTRIBUTING.md. Until then
+    the required 'gate' check fails every pull request.
   - Fill in the documents that carry a "How to fill this in" block (start with
     docs/design/README.md), then accept ADR-0002 and ADR-0005.
   - Automated issue triage (optional): replace the example area in
