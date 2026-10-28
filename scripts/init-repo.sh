@@ -26,7 +26,7 @@
 set -euo pipefail
 
 # The status checks main requires; each is a job in .github/workflows/.
-REQUIRED_CHECKS=(dco docs-check docs-immutability require-linked-issue)
+REQUIRED_CHECKS=(dco docs-check docs-immutability gate require-linked-issue)
 
 die() { echo "init-repo: $*" >&2; exit 1; }
 
@@ -216,6 +216,9 @@ SUBJECT="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_p
 cat <<EOF
 
 Done. Left to do by hand:
+  - Set up the project's checks: replace the placeholder step in
+    .github/workflows/ci.yml and name the same command in CONTRIBUTING.md. Until then
+    the required 'gate' check fails every pull request.
   - Fill in the documents that carry a "How to fill this in" block (start with
     docs/design/README.md), then accept ADR-0002 and ADR-0005.
   - Automated issue triage (optional): replace the example area in
