@@ -8,12 +8,14 @@
 # GitHub copies a template's files but not its labels, settings or branch protection,
 # so this script:
 #   1. asks for the license (Apache-2.0 by default; set PROJECT_LICENSE to skip the
-#      question), writes LICENSE (and NOTICE for Apache-2.0 only), fills the {{...}}
+#      question) and the contact address for conduct and policy reports (PROJECT_CONTACT),
+#      writes LICENSE (and NOTICE for Apache-2.0 only), fills the {{...}}
 #      placeholders in every tracked file from the GitHub repo + git config, drops the
 #      template-only README block and itself, then commits (signed off) and pushes to main;
 #   2. creates the `needs-issue` label the PR triage workflow uses;
 #   3. turns on private vulnerability reporting and turns off the wiki;
-#   4. protects main: PRs required, `dco` required, admins included, conversations
+#   4. protects main: PRs required, `dco` and `docs-immutability` required, admins
+#      included, conversations
 #      resolved, no force-push or deletion.
 #
 # Steps 2-4 are idempotent; re-running after step 1 only re-applies settings.
@@ -35,6 +37,7 @@ DESCRIPTION="$(gh repo view --json description --jq .description)"
 AUTHOR="$(git config user.name || true)"
 [ -n "$AUTHOR" ] || AUTHOR="$(gh api user --jq '.name // .login')"
 YEAR="$(date +%Y)"
+DATE="$(date '+%d.%m.%Y %H:%M')"
 
 # --- 1. license + placeholders -----------------------------------------------------
 if grep -q '{{PROJECT_NAME}}' README.md 2>/dev/null; then
@@ -69,6 +72,15 @@ if grep -q '{{PROJECT_NAME}}' README.md 2>/dev/null; then
   esac
   echo "Using the $LICENSE_NAME"
 
+  # Published in the Code of Conduct and GOVERNANCE.md, so it must be a mailbox someone
+  # reads and that may be public. No default: a personal address shouldn't land there
+  # by accident.
+  CONTACT="${PROJECT_CONTACT:-}"
+  if [ -z "$CONTACT" ] && [ -t 0 ]; then
+    read -r -p "Contact email for conduct and policy reports (published): " CONTACT
+  fi
+  [[ "$CONTACT" == *@*.* ]] || die "set a contact email (PROJECT_CONTACT=policy@example.org)"
+
   # The template ships the Apache-2.0 text and its NOTICE; anything else replaces them.
   if [ "$CHOICE" != apache-2.0 ]; then
     gh api "licenses/$CHOICE" --jq .body \
@@ -77,11 +89,13 @@ if grep -q '{{PROJECT_NAME}}' README.md 2>/dev/null; then
   fi
 
   echo "Filling placeholders for $REPO"
-  python3 -I - "$NAME" "$DESCRIPTION" "$OWNER" "$YEAR" "$AUTHOR" "$LICENSE_NAME" <<'PY'
+  python3 -I - "$NAME" "$DESCRIPTION" "$OWNER" "$YEAR" "$AUTHOR" "$LICENSE_NAME" "$DATE" \
+    "$CONTACT" <<'PY'
 import re, subprocess, sys
-name, desc, owner, year, author, license_name = sys.argv[1:]
+name, desc, owner, year, author, license_name, date, contact = sys.argv[1:]
 subs = {"{{PROJECT_NAME}}": name, "{{PROJECT_DESCRIPTION}}": desc, "{{OWNER}}": owner,
-        "{{YEAR}}": year, "{{AUTHOR}}": author, "{{LICENSE_NAME}}": license_name}
+        "{{YEAR}}": year, "{{AUTHOR}}": author, "{{LICENSE_NAME}}": license_name,
+        "{{DATE}}": date, "{{CONTACT_EMAIL}}": contact}
 tracked = subprocess.run(["git", "ls-files", "-z"], capture_output=True, text=True,
                          check=True).stdout.split("\0")
 changed = []
@@ -125,7 +139,7 @@ echo "Private vulnerability reporting on, wiki off"
 # --- 4. branch protection -----------------------------------------------------------
 gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<'JSON'
 {
-  "required_status_checks": {"strict": false, "contexts": ["dco"]},
+  "required_status_checks": {"strict": false, "contexts": ["dco", "docs-immutability"]},
   "enforce_admins": true,
   "required_pull_request_reviews": {"required_approving_review_count": 0},
   "restrictions": null,
@@ -134,5 +148,5 @@ gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<'
   "allow_deletions": false
 }
 JSON
-echo "Branch protection on $BRANCH: PRs required, dco required, admins included"
+echo "Branch protection on $BRANCH: PRs required, dco and docs-immutability required, admins included"
 echo "Done."

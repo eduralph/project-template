@@ -28,6 +28,10 @@ This appends a `Signed-off-by: Your Name <you@example.com>` trailer (using your
 - One logical change per PR; split unrelated changes.
 - A change ships with the means to verify it: a test, or a stated reason why a test is
   impractical plus a manual repro.
+- A change to the system's structure updates the architecture overview in the same PR. A
+  settled design question becomes an ADR. See [`docs/design/README.md`](docs/design/README.md)
+  for which document class to use; accepted ADRs and proposals and stable specs are never
+  edited, only superseded.
 
 ## Running checks
 
