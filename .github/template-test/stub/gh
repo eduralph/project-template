@@ -1,0 +1,18 @@
+#!/usr/bin/env bash
+# Stand-in for gh used by test_init_repo.py. It answers the questions init-repo.sh asks
+# about the repo, passes license lookups to the real gh ($REAL_GH), and logs every other
+# call to $STUB_LOG, followed by its stdin when the call reads `--input -`.
+case "$*" in
+  "auth status") exit 0 ;;
+  "repo view --json nameWithOwner,isTemplate,defaultBranchRef"*) printf 'eduralph/demo\tfalse\tmain\n'; exit 0 ;;
+  "repo view --json description"*) echo "A demo project."; exit 0 ;;
+  "api user --jq .login") echo "demo-maintainer"; exit 0 ;;
+  "api user --jq "*) echo "Demo Maintainer"; exit 0 ;;
+  "api licenses/"*) exec "$REAL_GH" "$@" ;;
+  "api repos/eduralph/demo --jq "*) echo "disabled"; exit 0 ;;
+  *"oidc/customization/sub --jq"*) echo "repo:eduralph@1/demo@2"; exit 0 ;;
+esac
+echo "gh $*" >> "$STUB_LOG"
+for arg in "$@"; do
+  if [ "$arg" = "--input" ]; then cat >> "$STUB_LOG"; echo >> "$STUB_LOG"; break; fi
+done

@@ -12,7 +12,8 @@
 #      package ecosystem for Dependabot (PROJECT_ECOSYSTEM: pip, cargo, npm, gomod or
 #      none); writes LICENSE (and NOTICE for Apache-2.0 only), fills the {{...}}
 #      placeholders in every tracked file from the GitHub repo + git config, drops the
-#      template-only README block and itself, then commits (signed off) and pushes to main;
+#      template-only README block, its own test (.github/template-test/) and itself, then
+#      commits (signed off) and pushes to main;
 #   2. creates the triage labels from .github/triage/labels.json, plus `new`,
 #      `release-gating`, `research` and `accessibility`;
 #   3. turns off the wiki, deletes a PR's branch when it merges, and turns on private
@@ -120,6 +121,9 @@ PY
       | sed -e "s/\[year\]/$YEAR/g" -e "s/\[fullname\]/$AUTHOR/g" > LICENSE
     git rm -q NOTICE
   fi
+
+  # Files that only make sense in the template repository: its own test of this script.
+  git rm -rq .github/template-test .github/workflows/template-test.yml
 
   echo "Filling placeholders for $REPO"
   python3 -I - "$NAME" "$DESCRIPTION" "$OWNER" "$YEAR" "$AUTHOR" "$LICENSE_NAME" "$DATE" \

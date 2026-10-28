@@ -1,0 +1,25 @@
+name: template-test
+
+# Runs scripts/init-repo.sh against a stub gh, as a new project would, and checks the
+# result (.github/template-test/test_init_repo.py). Only meaningful in the template
+# repository: init-repo.sh deletes this workflow and the test from repos created from it.
+on:
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  template-test:
+    if: ${{ github.event.repository.is_template }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
+        with:
+          python-version: "3.14"
+      - name: Run init-repo.sh against a stub gh
+        env:
+          # The stub passes license lookups (`gh api licenses/...`) to the real gh.
+          GH_TOKEN: ${{ github.token }}
+        run: python3 -I -m unittest discover -s .github/template-test -v

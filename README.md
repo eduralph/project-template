@@ -38,6 +38,9 @@
 > `gate` and `require-linked-issue` required; admins included). GitHub doesn't copy
 > labels, settings or protection rules from a template, which is why the script exists. At
 > the end it prints what is left to do by hand.
+>
+> Changes to the template itself are tested by `template-test`, which runs `init-repo.sh`
+> against a stub `gh` (`.github/template-test/`). It runs only in the template repo.
 <!-- template:end -->
 
 ## Status
