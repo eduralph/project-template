@@ -174,7 +174,7 @@ jobs:
           exit "$status"
       - name: Hand the plan to the apply job
         if: always() && steps.triage.outputs.plan == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: triage-plan
           path: ${{ runner.temp }}/plan.json
