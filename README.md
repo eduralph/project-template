@@ -3,15 +3,20 @@
 {{PROJECT_DESCRIPTION}}
 
 <!-- template:begin -->
-> **This is a GitHub template repository.** It holds the repo-level setup shared by
-> eduralph, Ralphovi and getwyrd projects: DCO sign-off, the agent STOP rules, a
-> contributing guide that points at the
-> [shared one](https://github.com/eduralph/.github/blob/main/CONTRIBUTING.md), and the PR
-> triage workflow that labels code PRs without a linked issue `needs-issue` (it never
-> blocks or closes them). It also ships the design-documentation layout used by
-> [wyrd](https://github.com/getwyrd/wyrd/tree/main/docs): four document classes under
-> `docs/design/`, governance under `docs/governance/`, and the `docs-immutability` check.
-> Each file still to be written carries a **How to fill this in** block. For projects driven by the PDCA quality cycle, use
+> **This is a GitHub template repository.** It holds the setup shared by eduralph, Ralphovi
+> and getwyrd projects, with [wyrd](https://github.com/getwyrd/wyrd) as the reference:
+>
+> - the design-documentation layout: four document classes under `docs/design/`,
+>   governance under `docs/governance/`, and the `docs-immutability` check;
+> - the PR rules: DCO sign-off (`dco`) and a linked issue on every PR
+>   (`require-linked-issue`), plus a contributing guide that points at the
+>   [shared one](https://github.com/eduralph/.github/blob/main/CONTRIBUTING.md);
+> - issue handling: bug and enhancement templates, the `new` label kept in step with the
+>   milestone, and automated priority triage (ADR-0005) that stays off until it is set up;
+> - SECURITY.md, Dependabot, the agent rules in AGENTS.md and Claude Code permissions.
+>
+> Each file still to be written carries a **How to fill this in** block. For projects
+> driven by the PDCA quality cycle, use
 > [pdca-project-template](https://github.com/eduralph/pdca-project-template) instead.
 >
 > ### Start a new project
@@ -20,16 +25,18 @@
 > gh repo create <owner>/<name> --public --template eduralph/project-template \
 >   --description "<one line>" --clone
 > cd <name>
-> scripts/init-repo.sh          # asks for the license, fills placeholders, applies settings
+> scripts/init-repo.sh          # asks three questions, fills placeholders, applies settings
 > ```
 >
-> `init-repo.sh` asks which license to use (Apache-2.0 by default) and the contact address
-> for conduct and policy reports, replaces the `{{…}}`
-> placeholders, and commits and pushes that once to `main`. It then creates the
-> `needs-issue` label, turns on private vulnerability reporting, turns off the wiki and
-> protects `main` (PRs required, `dco` and `docs-immutability` checks required, admins
-> included, no force-push or deletion). It removes itself and this block in the same commit. GitHub doesn't copy
-> labels, settings or protection rules from a template, which is why the script exists.
+> `init-repo.sh` asks for the license (Apache-2.0 by default), the contact address for
+> conduct and policy reports, and the package ecosystem for Dependabot. It replaces the
+> `{{…}}` placeholders and commits and pushes that once to `main`, removing itself and this
+> block. It then creates the labels, turns on the security settings (vulnerability
+> reporting, Dependabot security updates, secret scanning with push protection, a read-only
+> Actions token, the immutable OIDC subject), and protects `main` (PRs required; `dco`,
+> `docs-immutability` and `require-linked-issue` required; admins included). GitHub doesn't
+> copy labels, settings or protection rules from a template, which is why the script
+> exists. At the end it prints what is left to do by hand.
 <!-- template:end -->
 
 ## Status
