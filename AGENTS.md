@@ -34,6 +34,9 @@ agent-specific discipline.
   `permissions:` it needs.
 - `template-test` checks the first two in the template repository; Scorecard reports them
   in every repo.
+- A job that branch protection requires is listed in `.github/required-checks.txt`. When
+  you rename, add or drop one, change the file in the same PR and tell the maintainer to
+  run `python3 -I scripts/repo-settings.py apply` after the merge; it needs admin rights.
 
 ## Publishing defaults
 

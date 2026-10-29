@@ -1,8 +1,9 @@
 name: template-test
 
-# Runs scripts/init-repo.sh against a stub gh, as a new project would, and checks the
-# result (.github/template-test/test_init_repo.py). Only meaningful in the template
-# repository: init-repo.sh deletes this workflow and the test from repos created from it.
+# Runs scripts/init-repo.sh and scripts/repo-settings.py against a fake GitHub, as a new
+# project would, and checks the result (.github/template-test/). Only meaningful in the
+# template repository: init-repo.sh deletes this workflow and the tests from repos created
+# from it.
 on:
   pull_request:
 
@@ -20,7 +21,7 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
           python-version: "3.14"
-      - name: Run init-repo.sh against a stub gh
+      - name: Run init-repo.sh and repo-settings.py against a fake GitHub
         env:
           # The stub passes license lookups (`gh api licenses/...`) to the real gh.
           GH_TOKEN: ${{ github.token }}
