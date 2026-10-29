@@ -18,8 +18,8 @@
 #      `release-gating`, `research` and `accessibility`;
 #   3. turns off the wiki, deletes a PR's branch when it merges, and turns on private
 #      vulnerability reporting, Dependabot alerts and security updates, secret scanning
-#      with push protection and generic-secret patterns, a read-only Actions token, and
-#      the immutable OIDC subject;
+#      with push protection and generic-secret patterns, code scanning (CodeQL default
+#      setup), a read-only Actions token, and the immutable OIDC subject;
 #   4. protects main: PRs required; the checks in REQUIRED_CHECKS required; admins
 #      included; conversations resolved; no force-push or deletion;
 #   5. prints what is left to do by hand to turn on automated issue triage.
@@ -199,6 +199,11 @@ JSON
 # Generic patterns (private keys, connection strings, passwords) are accepted but left
 # off for repos on a personal account, so report what GitHub actually did.
 GENERIC="$(gh api "repos/$REPO" --jq '.security_and_analysis.secret_scanning_non_provider_patterns.status // "unavailable"')"
+# Code scanning with GitHub's CodeQL default setup: it analyses the languages it finds
+# (the workflows themselves at least) on pushes, pull requests and weekly. Setup runs in
+# the background, so report the state GitHub returns rather than assume it took.
+gh api -X PATCH "repos/$REPO/code-scanning/default-setup" -f state=configured >/dev/null 2>&1 || true
+CODEQL="$(gh api "repos/$REPO/code-scanning/default-setup" --jq .state 2>/dev/null || true)"
 gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
   -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false >/dev/null
 gh api -X PUT "repos/$REPO/actions/oidc/customization/sub" \
@@ -206,6 +211,7 @@ gh api -X PUT "repos/$REPO/actions/oidc/customization/sub" \
 echo "Wiki off; merged branches deleted; vulnerability reporting, Dependabot security"
 echo "  updates, secret scanning on; read-only Actions token; immutable OIDC subject"
 echo "  Generic-secret scanning: ${GENERIC:-unknown} (GitHub leaves it off for personal-account repos)"
+echo "  Code scanning (CodeQL default setup): ${CODEQL:-unknown}"
 
 # --- 4. branch protection -----------------------------------------------------------
 CONTEXTS="$(printf '"%s",' "${REQUIRED_CHECKS[@]}")"

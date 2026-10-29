@@ -10,6 +10,7 @@ case "$*" in
   "api user --jq "*) echo "Demo Maintainer"; exit 0 ;;
   "api licenses/"*) exec "$REAL_GH" "$@" ;;
   "api repos/eduralph/demo --jq "*) echo "disabled"; exit 0 ;;
+  "api repos/eduralph/demo/code-scanning/default-setup --jq "*) echo "configured"; exit 0 ;;
   *"oidc/customization/sub --jq"*) echo "repo:eduralph@1/demo@2"; exit 0 ;;
 esac
 echo "gh $*" >> "$STUB_LOG"
