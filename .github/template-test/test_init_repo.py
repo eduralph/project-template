@@ -291,6 +291,9 @@ class InitRepo(unittest.TestCase):
                       ".gitmodules", ".github/advisory-db"}
         self.assertEqual(rust_files & files, rust_files if cargo else set())
         self.assertEqual("package-ecosystem: gitsubmodule" in dependabot, cargo)
+        for model in ("docs/design/architecture/14-threat-model.md", ".oss-scanner/threat_model.md"):
+            self.assertEqual("`scripts/advisory-db.sh`" in
+                             (repo / model).read_text(encoding="utf-8"), cargo, model)
         if not cargo:
             return
         self.assertEqual(git(repo, "ls-files", "-s", "--", ".github/advisory-db").split()[:2],

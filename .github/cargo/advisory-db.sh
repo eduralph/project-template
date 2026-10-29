@@ -37,5 +37,11 @@ if [ "$(git -C "$db" rev-parse HEAD)" != "$pin" ]; then
   git -C "$db" fetch --quiet --depth 1 origin "$pin"
   git -C "$db" checkout --quiet --detach "$pin"
 fi
+# cargo-deny's maximum-db-staleness dates the database by its last fetch, which the fetch
+# above refreshes on every fresh checkout, so check the pinned commit's own date.
+max_days="${ADVISORY_DB_MAX_AGE_DAYS:-90}"
+age_days=$(( ($(date +%s) - $(git -C "$db" log -1 --format=%ct HEAD)) / 86400 ))
+[ "$age_days" -le "$max_days" ] || die "the pinned advisory database is $age_days days old \
+(limit $max_days); merge Dependabot's PR that moves .github/advisory-db"
 echo "advisory database pinned at $pin"
 cargo fetch --locked

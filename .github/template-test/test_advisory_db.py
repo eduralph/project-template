@@ -98,6 +98,23 @@ class AdvisoryDb(unittest.TestCase):
         self.assertEqual(self.log.read_text().splitlines(), ["cargo fetch --locked"],
                          "an existing clone is moved, not fetched again")
 
+    def test_refuses_a_stale_pin(self) -> None:
+        # The fetch makes FETCH_HEAD new, so only the commit's own date can show the age.
+        source = Path(self.env["ADVISORY_DB_SOURCE"])
+        git(source, "commit", "-q", "--allow-empty", "-m", "stale",
+            env={**self.env, "GIT_COMMITTER_DATE": "2000-01-01T00:00:00Z"})
+        self.pin(git(source, "rev-parse", "HEAD"))
+        result = self.run_script()
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("days old (limit 90)", result.stderr)
+        self.assertNotIn("cargo fetch --locked", self.log.read_text())
+
+    def test_the_daily_audit_fails_through_tee(self) -> None:
+        # Without pipefail, tee's exit status hides a failed audit and no issue opens.
+        workflow = (ROOT / ".github" / "cargo" / "advisories.yml").read_text(encoding="utf-8")
+        self.assertIn("        shell: bash\n        run: cargo deny check advisories 2>&1 | tee",
+                      workflow)
+
     def test_refuses_without_a_gitlink(self) -> None:
         result = self.run_script()
         self.assertNotEqual(result.returncode, 0)

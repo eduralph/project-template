@@ -138,6 +138,28 @@ entry = ("  # The pinned RustSec advisory database (scripts/advisory-db.sh). Dai
 anchor = "  - package-ecosystem: github-actions\n"
 assert anchor in text
 open(path, "w", encoding="utf-8").write(text.replace(anchor, entry + anchor, 1))
+
+# The pinned database changes how advisories are detected; both threat models say so.
+for path, anchor, entry in [
+    ("docs/design/architecture/14-threat-model.md",
+     "_What is not mitigated, why that is acceptable, and who accepted it._\n",
+     "\n- **Advisory lag (pinned RustSec database).** The PR gate audits the RustSec advisory\n"
+     "  database at the commit `.github/advisory-db` pins (`scripts/advisory-db.sh`), so a newly\n"
+     "  published advisory reaches it only when Dependabot's daily PR that moves the pin merges.\n"
+     "  Until then the daily `advisories` workflow, which audits the newest database, opens an\n"
+     "  issue naming it, and `scripts/advisory-db.sh` refuses a pin more than 90 days old.\n"
+     "  Accepted so that an advisory against an unchanged dependency does not turn every open\n"
+     "  PR red at once.\n"),
+    (".oss-scanner/threat_model.md",
+     "- _Each known, accepted gap, and what about it is still in scope._\n",
+     "- The PR gate audits a pinned RustSec advisory database (`scripts/advisory-db.sh`), so a\n"
+     "  just-published advisory is not flagged on a PR until the pin moves; the daily\n"
+     "  `advisories` workflow reports it against the newest database. An advisory that\n"
+     "  affects a shipped dependency is still in scope.\n"),
+]:
+    text = open(path, encoding="utf-8").read()
+    assert anchor in text, path
+    open(path, "w", encoding="utf-8").write(text.replace(anchor, anchor + entry, 1))
 PY
     echo "RustSec advisory database pinned at $PIN"
   fi
