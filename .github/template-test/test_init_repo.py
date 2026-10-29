@@ -7,9 +7,11 @@ edits are tested too) into a throwaway repo with a local bare remote, runs init-
 non-interactively with a license and a Dependabot ecosystem, and checks the result: the
 script succeeds, no placeholder is left, the template-only files are gone, LICENSE,
 NOTICE and dependabot.yml match the answers, and the GitHub calls the script makes
-(logged by stub/gh) include every expected setting. It also checks that each status check
-branch protection requires is reported by a job in .github/workflows/, so a renamed job
-can't leave new repos waiting forever on a check that never runs.
+(logged by stub/gh, which keeps the repo's settings like GitHub would) include every
+expected setting. It also checks that each status check branch protection requires is
+reported by a job in .github/workflows/, so a renamed job can't leave new repos waiting
+forever on a check that never runs. test_repo_settings.py tests the settings script on
+its own.
 
 A second test checks the template's workflows themselves: every action is pinned to a
 full commit hash with its release in a comment, and every actions/checkout sets
@@ -17,8 +19,8 @@ full commit hash with its release in a comment, and every actions/checkout sets
 
 The stub answers everything except license texts, which come from the real gh ($REAL_GH,
 found on PATH), so the non-Apache cases need network access and a gh login or GH_TOKEN.
-What this cannot test is whether GitHub accepts the calls; that still takes one run on a
-throwaway repo.
+What this cannot test is whether GitHub accepts the calls; that takes one run on a
+throwaway repo, after which `scripts/repo-settings.py check` shows what GitHub did.
 
 init-repo.sh deletes this folder from repos created from the template.
 """
@@ -60,7 +62,7 @@ EXPECTED_CALLS = [
     f"gh label create needs-triage --repo {REPO}",
     f"gh label create new --repo {REPO}",
     f"gh label create release-gating --repo {REPO}",
-    f"gh repo edit {REPO} --enable-wiki=false --delete-branch-on-merge",
+    f"gh api -X PATCH repos/{REPO} -F has_wiki=false -F delete_branch_on_merge=true",
     f"gh api -X PUT repos/{REPO}/private-vulnerability-reporting",
     f"gh api -X PUT repos/{REPO}/vulnerability-alerts",
     f"gh api -X PUT repos/{REPO}/automated-security-fixes",
@@ -74,6 +76,8 @@ EXPECTED_CALLS = [
 FORBIDDEN_CALLS = [f"gh label create area:core --repo {REPO}"]
 SECRET_SETTINGS = ["secret_scanning", "secret_scanning_push_protection",
                    "secret_scanning_non_provider_patterns"]
+FRESH_STATE = HERE / "stub" / "fresh-repo.json"
+CHECKS_FILE = ".github/required-checks.txt"
 TEMPLATE_ONLY = ["scripts/init-repo.sh", ".github/template-test/test_init_repo.py",
                  ".github/template-test/stub/gh", ".github/workflows/template-test.yml"]
 
@@ -93,6 +97,11 @@ def stdin_after(log: str, call: str) -> str:
             break
         body.append(line)
     return "\n".join(body)
+
+
+def required_checks(root: Path) -> list[str]:
+    lines = (root / CHECKS_FILE).read_text(encoding="utf-8").splitlines()
+    return [n for n in (line.split("#", 1)[0].strip() for line in lines) if n]
 
 
 def reported_checks(root: Path) -> set[str]:
@@ -119,6 +128,10 @@ def reported_checks(root: Path) -> set[str]:
 
 
 class Workflows(unittest.TestCase):
+    def test_required_checks_are_reported(self) -> None:
+        missing = set(required_checks(ROOT)) - reported_checks(ROOT)
+        self.assertEqual(missing, set(), f"{CHECKS_FILE} names checks no workflow job reports")
+
     def test_actions_pinned_and_credentials_not_persisted(self) -> None:
         problems = []
         for wf in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
@@ -190,8 +203,10 @@ class InitRepo(unittest.TestCase):
 
     def run_init(self, repo: Path, license_id: str, ecosystem: str) -> str:
         log = self.tmp / f"{repo.name}.log"
-        env = {**self.env, "STUB_LOG": str(log), "PROJECT_LICENSE": license_id,
-               "PROJECT_ECOSYSTEM": ecosystem}
+        state = self.tmp / f"{repo.name}.json"
+        shutil.copy(FRESH_STATE, state)
+        env = {**self.env, "STUB_LOG": str(log), "STUB_STATE": str(state),
+               "PROJECT_LICENSE": license_id, "PROJECT_ECOSYSTEM": ecosystem}
         result = subprocess.run(["bash", "scripts/init-repo.sh"], cwd=repo, env=env,
                                 stdin=subprocess.DEVNULL, capture_output=True, text=True,
                                 timeout=300)
@@ -205,7 +220,7 @@ class InitRepo(unittest.TestCase):
                 repo = self.make_repo(f"{license_id}-{ecosystem}")
                 log = self.run_init(repo, license_id, ecosystem)
                 self.check_tree(repo, license_id, ecosystem)
-                self.check_calls(log)
+                self.check_calls(log, repo)
 
     def check_tree(self, repo: Path, license_id: str, ecosystem: str) -> None:
         self.assertEqual(git(repo, "status", "--porcelain"), "", "init-repo.sh left changes uncommitted")
@@ -226,7 +241,7 @@ class InitRepo(unittest.TestCase):
             self.assertIn(f"package-ecosystem: {ecosystem}", dependabot)
         self.assertEqual(dependabot.count("package-ecosystem:"), 1 if ecosystem == "none" else 2)
 
-    def check_calls(self, log: str) -> None:
+    def check_calls(self, log: str, repo: Path) -> None:
         for call in EXPECTED_CALLS:
             self.assertTrue(any(line.startswith(call) for line in log.splitlines()),
                             f"init-repo.sh never ran: {call}")
@@ -242,9 +257,9 @@ class InitRepo(unittest.TestCase):
         self.assertTrue(protection["enforce_admins"])
         self.assertTrue(protection["required_conversation_resolution"])
         self.assertFalse(protection["allow_force_pushes"])
-        required = set(protection["required_status_checks"]["contexts"])
-        self.assertTrue(required, "no required checks")
-        missing = required - reported_checks(ROOT)
+        required = protection["required_status_checks"]["contexts"]
+        self.assertEqual(required, [c for c in required_checks(ROOT) if c != "template-test"])
+        missing = set(required) - reported_checks(repo)
         self.assertEqual(missing, set(), "required checks that no workflow job reports")
 
 

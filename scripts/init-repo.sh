@@ -16,19 +16,14 @@
 #      commits (signed off) and pushes to main;
 #   2. creates the triage labels from .github/triage/labels.json, plus `new`,
 #      `release-gating`, `research` and `accessibility`;
-#   3. turns off the wiki, deletes a PR's branch when it merges, and turns on private
-#      vulnerability reporting, Dependabot alerts and security updates, secret scanning
-#      with push protection and generic-secret patterns, code scanning (CodeQL default
-#      setup), a read-only Actions token, and the immutable OIDC subject;
-#   4. protects main: PRs required; the checks in REQUIRED_CHECKS required; admins
-#      included; conversations resolved; no force-push or deletion;
-#   5. prints what is left to do by hand to turn on automated issue triage.
+#   3. applies the repo settings and protects main with scripts/repo-settings.py (the
+#      wiki off, merged branches deleted, the security settings, CodeQL, a read-only
+#      Actions token, the immutable OIDC subject, and the checks in
+#      .github/required-checks.txt required); `repo-settings.py check` re-reads them later;
+#   4. prints what is left to do by hand to turn on automated issue triage.
 #
-# Steps 2-5 are idempotent; re-running after step 1 only re-applies settings.
+# Steps 2-4 are idempotent; re-running after step 1 only re-applies settings.
 set -euo pipefail
-
-# The status checks main requires; each is a job in .github/workflows/.
-REQUIRED_CHECKS=(dco docs-check docs-immutability gate require-linked-issue)
 
 die() { echo "init-repo: $*" >&2; exit 1; }
 
@@ -122,8 +117,11 @@ PY
     git rm -q NOTICE
   fi
 
-  # Files that only make sense in the template repository: its own test of this script.
+  # Files that only make sense in the template repository: its own test of this script,
+  # and the check that runs it.
   git rm -rq .github/template-test .github/workflows/template-test.yml
+  grep -vx template-test .github/required-checks.txt > .github/required-checks.txt.new
+  mv .github/required-checks.txt.new .github/required-checks.txt
 
   echo "Filling placeholders for $REPO"
   python3 -I - "$NAME" "$DESCRIPTION" "$OWNER" "$YEAR" "$AUTHOR" "$LICENSE_NAME" "$DATE" \
@@ -184,53 +182,16 @@ PY
 done
 echo "Labels ready"
 
-# --- 3. repo settings ---------------------------------------------------------------
-# Deleting merged branches also lets GitHub move a stacked PR onto main when its base
-# merges; with the base branch left behind, the stacked PR merges into it instead.
-gh repo edit "$REPO" --enable-wiki=false --delete-branch-on-merge >/dev/null
-gh api -X PUT "repos/$REPO/private-vulnerability-reporting" >/dev/null
-gh api -X PUT "repos/$REPO/vulnerability-alerts" >/dev/null
-gh api -X PUT "repos/$REPO/automated-security-fixes" >/dev/null
-gh api -X PATCH "repos/$REPO" --input - >/dev/null <<'JSON'
-{"security_and_analysis": {"secret_scanning": {"status": "enabled"},
-                           "secret_scanning_push_protection": {"status": "enabled"},
-                           "secret_scanning_non_provider_patterns": {"status": "enabled"}}}
-JSON
-# Generic patterns (private keys, connection strings, passwords) are accepted but left
-# off for repos on a personal account, so report what GitHub actually did.
-GENERIC="$(gh api "repos/$REPO" --jq '.security_and_analysis.secret_scanning_non_provider_patterns.status // "unavailable"')"
-# Code scanning with GitHub's CodeQL default setup: it analyses the languages it finds
-# (the workflows themselves at least) on pushes, pull requests and weekly. Setup runs in
-# the background, so report the state GitHub returns rather than assume it took.
-gh api -X PATCH "repos/$REPO/code-scanning/default-setup" -f state=configured >/dev/null 2>&1 || true
-CODEQL="$(gh api "repos/$REPO/code-scanning/default-setup" --jq .state 2>/dev/null || true)"
-gh api -X PUT "repos/$REPO/actions/permissions/workflow" \
-  -f default_workflow_permissions=read -F can_approve_pull_request_reviews=false >/dev/null
-gh api -X PUT "repos/$REPO/actions/oidc/customization/sub" \
-  -F use_default=true -F use_immutable_subject=true >/dev/null
-echo "Wiki off; merged branches deleted; vulnerability reporting, Dependabot security"
-echo "  updates, secret scanning on; read-only Actions token; immutable OIDC subject"
-echo "  Generic-secret scanning: ${GENERIC:-unknown} (GitHub leaves it off for personal-account repos)"
-echo "  Code scanning (CodeQL default setup): ${CODEQL:-unknown}"
+# --- 3. settings and branch protection ----------------------------------------------
+# scripts/repo-settings.py holds the list; `check` re-reads it any time later. Carry on
+# to the hand-done steps if a setting didn't take, but fail at the end.
+SETTINGS=0
+python3 -I scripts/repo-settings.py apply "$REPO" || SETTINGS=$?
 
-# --- 4. branch protection -----------------------------------------------------------
-CONTEXTS="$(printf '"%s",' "${REQUIRED_CHECKS[@]}")"
-gh api -X PUT "repos/$REPO/branches/$BRANCH/protection" --input - >/dev/null <<JSON
-{
-  "required_status_checks": {"strict": false, "contexts": [${CONTEXTS%,}]},
-  "enforce_admins": true,
-  "required_pull_request_reviews": {"required_approving_review_count": 0},
-  "restrictions": null,
-  "required_conversation_resolution": true,
-  "allow_force_pushes": false,
-  "allow_deletions": false
-}
-JSON
-echo "Branch protection on $BRANCH: PRs required; ${REQUIRED_CHECKS[*]} required;"
-echo "  admins included"
-
-# --- 5. what is left by hand ---------------------------------------------------------
+# --- 4. what is left by hand ---------------------------------------------------------
 SUBJECT="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_prefix)"
+[ "$SETTINGS" = 0 ] || echo "Some settings didn't take (DIFF above); fix them, then run
+  python3 -I scripts/repo-settings.py apply"
 cat <<EOF
 
 Done. Left to do by hand:
@@ -250,3 +211,4 @@ Done. Left to do by hand:
       gh variable set ANTHROPIC_WORKSPACE_ID       --repo $REPO --body <workspace id>
     Until then the Issue priority workflow skips itself.
 EOF
+exit "$SETTINGS"
