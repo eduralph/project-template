@@ -96,6 +96,7 @@ class DocsLinks(unittest.TestCase):
 BASE_FILES = {
     "README.md": "# Readme\n",
     "docs/guide.md": "# Guide\n\n## Setup\n",
+    "docs/rendered.md.jinja": "# {{ name }}\n",
 }
 
 DOC = "docs/page.md"
@@ -105,6 +106,7 @@ MUST_FAIL = {
     "image": ("![diagram](img/missing.png)\n", "img/missing.png"),
     "reference definition": ("Text [t].\n\n[t]: missing.md\n", "missing.md"),
     "fragment": ("See [x](missing.md#x).\n", "missing.md#x"),
+    "only the .jinja suffix is added": ("See [x](rendered).\n", "rendered"),
     "nested-list reference definition": (
         "- item\n  - nested item\n\n    [t]: nested-missing.md\n",
         "nested-missing.md",
@@ -163,6 +165,7 @@ MUST_PASS = {
     "valid file": "See [guide](guide.md) and [readme](../README.md).\n",
     "valid directory": "See [docs](../docs) and [root](../) and [here](./).\n",
     "valid file with fragment": "See [setup](guide.md#setup).\n",
+    "file copier renders from a .jinja source": "See [it](rendered.md) and [src](rendered.md.jinja).\n",
     "comment spanning lines": "Before.\n<!--\nSee [x](missing.md).\n-->\nAfter.\n",
     "unclosed comment masks the rest": "Before.\n<!-- open\n\n[x](missing.md)\n\nmore\n",
     "backtick fence": "```markdown\n[x](missing.md)\n```\n",

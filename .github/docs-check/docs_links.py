@@ -27,7 +27,8 @@ Every tracked `.md` file (`git ls-files`) is scanned with this rule, applied in 
    - anything with a scheme (`https:`, `mailto:`, ...) and pure `#...` links are skipped;
    - otherwise the `#fragment` is stripped, backslash escapes are undone, the path is
      resolved relative to the file's directory, and it must be a tracked file or a
-     directory that holds one.
+     directory that holds one. A tracked `X.jinja` also counts as `X`: copier renders the
+     one into the other, so in a template the link is right in every rendered project.
 
 Known gaps (by design, not bugs):
 - indented (4-space) code blocks are not recognized, so a link inside one is checked;
@@ -316,7 +317,7 @@ def main() -> int:
                 continue
             checked += 1
             resolved = posixpath.normpath(posixpath.join(base, target))
-            if resolved not in files and resolved not in dirs:
+            if resolved not in files and resolved not in dirs and f"{resolved}.jinja" not in files:
                 broken.append(f"{path}:{link.line}: broken link: {link.dest}")
 
     for line in broken:
