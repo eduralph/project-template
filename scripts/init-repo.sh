@@ -99,7 +99,7 @@ eco = sys.argv[1]
 path = ".github/dependabot.yml"
 text = open(path, encoding="utf-8").read()
 entry = (f"  - package-ecosystem: {eco}\n    directory: \"/\"\n    schedule:\n"
-         "      interval: weekly\n    cooldown:\n      default-days: 14\n"
+         "      interval: weekly\n    cooldown:\n      default-days: 7\n"
          "    open-pull-requests-limit: 5\n"
          "    commit-message:\n      prefix: \"deps\"\n")
 anchor = "  - package-ecosystem: github-actions\n"
