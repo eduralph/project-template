@@ -14,7 +14,9 @@ withstand) is maintained with the design documentation: see
 [architecture §14](docs/design/architecture/14-threat-model.md).
 
 The project relies on **coordinated disclosure** and free, continuous tooling: Dependabot
-security updates and GitHub secret scanning run on every push. Reporters are credited, and
+security updates, GitHub secret scanning and CodeQL code scanning run on every push, and
+[OpenSSF Scorecard](https://scorecard.dev) rates the repository's practices weekly. GitHub
+Actions are pinned to commit hashes. Reporters are credited, and
 we will work with you on a disclosure timeline.
 
 **Safe harbor.** We will not pursue or support legal action against researchers acting in

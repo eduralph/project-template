@@ -11,6 +11,10 @@ NOTICE and dependabot.yml match the answers, and the GitHub calls the script mak
 branch protection requires is reported by a job in .github/workflows/, so a renamed job
 can't leave new repos waiting forever on a check that never runs.
 
+A second test checks the template's workflows themselves: every action is pinned to a
+full commit hash with its release in a comment, and every actions/checkout sets
+`persist-credentials: false`.
+
 The stub answers everything except license texts, which come from the real gh ($REAL_GH,
 found on PATH), so the non-Apache cases need network access and a gh login or GH_TOKEN.
 What this cannot test is whether GitHub accepts the calls; that still takes one run on a
@@ -37,6 +41,8 @@ ROOT = Path(
 )
 REPO = "eduralph/demo"
 PLACEHOLDER = re.compile(r"\{\{[A-Z_]+\}\}")
+USES = re.compile(r"^(\s*)(?:#\s*)?-?\s*uses:\s*(\S+)(.*)$")
+PINNED = re.compile(r"^[\w.-]+/[\w./-]+@[0-9a-f]{40}$")
 
 # (license, Dependabot ecosystem): the default, a license fetched from GitHub with no
 # extra ecosystem, and a copyleft license with another ecosystem.
@@ -59,6 +65,7 @@ EXPECTED_CALLS = [
     f"gh api -X PUT repos/{REPO}/vulnerability-alerts",
     f"gh api -X PUT repos/{REPO}/automated-security-fixes",
     f"gh api -X PATCH repos/{REPO} --input -",
+    f"gh api -X PATCH repos/{REPO}/code-scanning/default-setup -f state=configured",
     f"gh api -X PUT repos/{REPO}/actions/permissions/workflow -f default_workflow_permissions=read",
     f"gh api -X PUT repos/{REPO}/actions/oidc/customization/sub -F use_default=true -F use_immutable_subject=true",
     f"gh api -X PUT repos/{REPO}/branches/main/protection --input -",
@@ -109,6 +116,32 @@ def reported_checks(root: Path) -> set[str]:
             if in_jobs and job and m:
                 name = m[1].strip("\"'")
     return names
+
+
+class Workflows(unittest.TestCase):
+    def test_actions_pinned_and_credentials_not_persisted(self) -> None:
+        problems = []
+        for wf in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+            lines = wf.read_text(encoding="utf-8").splitlines()
+            for n, line in enumerate(lines, 1):
+                m = USES.match(line)
+                if not m or m[2].startswith("./"):
+                    continue
+                where = f"{wf.name}:{n}"
+                if not PINNED.match(m[2]) or not re.match(r"\s*#\s*v\d", m[3]):
+                    problems.append(f"{where}: pin {m[2]} to a commit hash, "
+                                    "with the release as a comment (`@<sha> # vX.Y.Z`)")
+                if m[2].startswith("actions/checkout@") and not line.lstrip().startswith("#"):
+                    indent = len(m[1]) + 2  # the step's keys sit under `- `
+                    block = []
+                    for later in lines[n:]:
+                        if later.strip() and len(later) - len(later.lstrip()) < indent:
+                            break
+                        block.append(later.strip())
+                    if "persist-credentials: false" not in block:
+                        problems.append(f"{where}: actions/checkout without "
+                                        "`persist-credentials: false`")
+        self.assertEqual(problems, [])
 
 
 class InitRepo(unittest.TestCase):

@@ -33,7 +33,8 @@ This appends a `Signed-off-by: Your Name <you@example.com>` trailer (using your
 - A change to the system's structure updates the architecture overview in the same PR. A
   settled design question becomes an ADR. See [`docs/design/README.md`](docs/design/README.md)
   for which document class to use; accepted ADRs and proposals and stable specs are never
-  edited, only superseded.
+  edited, only superseded. To propose a decision, follow
+  [How an ADR is made](docs/design/adr/README.md#how-an-adr-is-made).
 
 ## Issues
 

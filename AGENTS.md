@@ -25,6 +25,16 @@ agent-specific discipline.
   onto it, resolve conflicts locally, rerun checks, and push with
   `--force-with-lease`.
 
+## Workflows
+
+- Pin every action to a full commit hash with its release as a comment
+  (`uses: actions/checkout@<40-char sha> # v7.0.1`), never to a tag or branch. Pick a
+  release at least two weeks old; Dependabot keeps pins current.
+- Give every `actions/checkout` `persist-credentials: false`, and each job only the
+  `permissions:` it needs.
+- `template-test` checks the first two in the template repository; Scorecard reports them
+  in every repo.
+
 ## Publishing defaults
 
 - Open draft PRs unless the user explicitly asks for ready-for-review.
@@ -62,6 +72,10 @@ agent-specific discipline.
     the current system; update it in the same PR whenever the system changes.
   - **Review** (`docs/design/reviews/`) — a dated go/no-go or readiness assessment.
 - **Start from the template** in `docs/design/templates/` and add a row to the class index.
+  For an ADR, follow [How an ADR is made](docs/design/adr/README.md#how-an-adr-is-made).
+- **Never accept a design document.** Write ADRs as `Proposed` and proposals and specs as
+  `draft`; changing the status to Accepted, accepted or stable is the maintainer's act
+  after the architecture board agrees, like the merge.
 - **Keep relative links working.** `docs-check` fails a PR with a Markdown link to a file or
   directory that isn't in the repo; run `python3 -I .github/docs-check/docs_links.py` before
   pushing a rename.
