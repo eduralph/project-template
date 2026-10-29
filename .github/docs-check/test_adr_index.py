@@ -116,6 +116,11 @@ MUST_FAIL = {
         with_index({**GOOD, f"{ADR}/0002-license.md": adr("0002", "License", "Accepted", "supersedes: 0042\n")},
                    replace_row("0002", "| [0002](0002-license.md) | License | Accepted |")),
         "`supersedes:` names 0042, which does not exist"),
+    "status read from the Status column, not the last": (
+        {**GOOD, f"{ADR}/README.md": index(*[r.replace("| Proposed |", "| Accepted | Proposed |")
+                                              if "0002" in r else r + " |" for r in GOOD_ROWS])
+         .replace("| # | Title | Status |", "| # | Title | Status | Notes |")},
+        "status `Accepted` differs from the file's `Proposed`"),
     "no index at all": (dict(GOOD), "README.md: missing"),
 }
 
@@ -130,6 +135,8 @@ MUST_PASS = {
         {**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded by ADR-0002 and ADR-0004"),
          f"{ADR}/0002-license.md": adr("0002", "License", "Proposed", "supersedes: ADR-0003\n")},
         replace_row("0003", "| [0003](0003-old-way.md) | Old way | Superseded by [0002](0002-license.md), [0004](0004-new-way.md) |")),
+    "a Notes column after Status": {**GOOD, f"{ADR}/README.md": index(
+        *[r + " a note |" for r in GOOD_ROWS]).replace("| # | Title | Status |", "| # | Title | Status | Notes |")},
     "a Proposed ADR may name what it would supersede": with_index(
         {**GOOD, f"{ADR}/0002-license.md": adr("0002", "License", "Proposed", "supersedes: 0001\n")},
         GOOD_ROWS),

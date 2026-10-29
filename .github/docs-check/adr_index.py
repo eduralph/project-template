@@ -88,20 +88,31 @@ def plain(cell: str) -> str:
 
 
 def index_rows(text: str) -> list[tuple[int, str, str]]:
-    """(line, linked file, status) for each table row under `## Index`."""
+    """(line, linked file, status) for each table row under `## Index`.
+
+    The status is the column headed `Status`, or the last column when no header says so.
+    """
     rows = []
     inside = False
+    status_col = -1
     for n, line in enumerate(text.split("\n"), 1):
         if line.startswith("## "):
             inside = line[3:].strip().lower() == "index"
+            status_col = -1
             continue
         if not inside or not line.lstrip().startswith("|"):
             continue
         cells = [c.strip() for c in line.strip().strip("|").split("|")]
         link = LINK_RE.search(cells[0]) if cells else None
-        if link is None or len(cells) < 3:
+        if link is None:
+            names = [plain(c).lower() for c in cells]
+            if "status" in names:
+                status_col = names.index("status")
             continue  # header or separator row
-        rows.append((n, posixpath.normpath(link[1]), plain(cells[-1])))
+        if len(cells) < 3:
+            continue
+        status = cells[status_col] if status_col < len(cells) else ""
+        rows.append((n, posixpath.normpath(link[1]), plain(status)))
     return rows
 
 
