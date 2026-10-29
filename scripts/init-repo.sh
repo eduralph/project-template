@@ -10,10 +10,12 @@
 #   1. asks for the license (Apache-2.0 by default; PROJECT_LICENSE skips the question),
 #      the contact address for conduct and policy reports (PROJECT_CONTACT) and the
 #      package ecosystem for Dependabot (PROJECT_ECOSYSTEM: pip, cargo, npm, gomod or
-#      none); writes LICENSE (and NOTICE for Apache-2.0 only), fills the {{...}}
-#      placeholders in every tracked file from the GitHub repo + git config, drops the
-#      template-only README block, its own test (.github/template-test/) and itself, then
-#      commits (signed off) and pushes to main;
+#      none); for cargo, sets up the pinned RustSec advisory database from .github/cargo/
+#      (deny.toml, scripts/advisory-db.sh, the daily advisories workflow, the
+#      .github/advisory-db submodule); writes LICENSE (and NOTICE for Apache-2.0 only),
+#      fills the {{...}} placeholders in every tracked file from the GitHub repo + git
+#      config, drops the template-only README block, its own test (.github/template-test/)
+#      and itself, then commits (signed off) and pushes to main;
 #   2. creates the triage labels from .github/triage/labels.json, plus `new`,
 #      `release-gating`, `research` and `accessibility`;
 #   3. applies the repo settings and protects main with scripts/repo-settings.py (the
@@ -110,6 +112,36 @@ PY
     none) echo "Dependabot: github-actions only" ;;
     *) die "unknown PROJECT_ECOSYSTEM '$ECOSYSTEM' (pip, cargo, npm, gomod or none)" ;;
   esac
+
+  # Rust: the gate audits a pinned RustSec advisory database (see .github/cargo/advisory-db.sh),
+  # recorded as the .github/advisory-db submodule at the database's newest commit, and
+  # Dependabot moves the pin daily. Other ecosystems don't use the files.
+  if [ "$ECOSYSTEM" = cargo ]; then
+    ADVISORY_DB_URL="${ADVISORY_DB_URL:-https://github.com/RustSec/advisory-db}"
+    PIN="$(git ls-remote "$ADVISORY_DB_URL" refs/heads/main | cut -f1)"
+    [[ "$PIN" =~ ^[0-9a-f]{40}$ ]] || die "could not read the main branch of $ADVISORY_DB_URL"
+    git mv .github/cargo/deny.toml deny.toml
+    git mv .github/cargo/advisory-db.sh scripts/advisory-db.sh
+    git mv .github/cargo/advisories.yml .github/workflows/advisories.yml
+    printf '[submodule "advisory-db"]\n\tpath = .github/advisory-db\n\turl = %s\n\tbranch = main\n\tshallow = true\n' \
+      "$ADVISORY_DB_URL" > .gitmodules
+    git update-index --add --cacheinfo "160000,$PIN,.github/advisory-db"
+    mkdir -p .github/advisory-db  # an empty folder: the submodule is never checked out
+    python3 -I - <<'PY'
+path = ".github/dependabot.yml"
+text = open(path, encoding="utf-8").read()
+entry = ("  # The pinned RustSec advisory database (scripts/advisory-db.sh). Daily, so a new\n"
+         "  # advisory reaches the gate within a day, as this one PR. No cooldown: the\n"
+         "  # database has no releases to let settle.\n"
+         "  - package-ecosystem: gitsubmodule\n    directory: \"/\"\n    schedule:\n"
+         "      interval: daily\n    commit-message:\n      prefix: \"deps\"\n")
+anchor = "  - package-ecosystem: github-actions\n"
+assert anchor in text
+open(path, "w", encoding="utf-8").write(text.replace(anchor, entry + anchor, 1))
+PY
+    echo "RustSec advisory database pinned at $PIN"
+  fi
+  git rm -rq --ignore-unmatch .github/cargo
 
   # The template ships the Apache-2.0 text and its NOTICE; anything else replaces them.
   if [ "$CHOICE" != apache-2.0 ]; then

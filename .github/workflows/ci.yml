@@ -32,6 +32,10 @@ jobs:
       #       python-version: "3.14"
       #   - run: python -m pip install -e '.[dev]'
       #   - run: python -m pytest
+      # For a Rust project (init-repo.sh with cargo set up the pinned advisory database):
+      #   - run: cargo install --locked cargo-deny@0.20.2
+      #   - run: scripts/advisory-db.sh && cargo deny --offline check advisories
+      #   - run: cargo test --locked
       - name: Checks not set up yet
         run: |
           echo "::error::No checks are set up yet. Replace the 'Checks not set up yet' step in .github/workflows/ci.yml with the project's check command, and name the same command in CONTRIBUTING.md."
