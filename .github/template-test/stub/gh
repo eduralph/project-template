@@ -8,6 +8,9 @@ a write updates the file the way GitHub would, so repo-settings.py's `apply` and
 can be tested end to end. Every call other than a read is logged to $STUB_LOG, followed
 by its stdin when the call reads `--input -`.
 
+With $STUB_LAG=N, the first N reads after a write still see the state from before it, as
+GitHub's reads lag its writes by a few seconds.
+
 Like GitHub, it leaves generic-secret scanning off for a repo on a personal account, and
 it adds a milestone created with `gh api repos/<repo>/milestones -f title=...` to the list.
 """
@@ -84,6 +87,10 @@ if path and method == "GET":
         print(file.read_text(encoding="utf-8"), end="")
         sys.exit(0)
     state = json.loads(STATE.read_text(encoding="utf-8"))
+    if state.get("_stale_reads", 0) > 0:
+        state["_stale_reads"] -= 1
+        STATE.write_text(json.dumps(state, indent=1), encoding="utf-8")
+        state = state["_stale"]
     if path not in state:
         fail("Not Found (HTTP 404)")
     expr = option("--jq")
@@ -106,6 +113,11 @@ if not path:
     sys.exit(0)  # labels and anything else that only needs logging
 
 state = json.loads(STATE.read_text(encoding="utf-8"))
+if int(os.environ.get("STUB_LAG", "0")):
+    if state.get("_stale_reads", 0) <= 0:
+        state["_stale"] = json.loads(json.dumps(
+            {k: v for k, v in state.items() if not k.startswith("_")}))
+    state["_stale_reads"] = int(os.environ["STUB_LAG"])
 repo_path = "/".join(path.split("/")[:3])
 if path.endswith("/private-vulnerability-reporting"):
     state[path] = {"enabled": True}

@@ -42,11 +42,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 import subprocess
 import sys
+import time
 
 CHECKS_FILE = ".github/required-checks.txt"
 FEDERATION_VARIABLE = "ANTHROPIC_FEDERATION_RULE_ID"
+# A write takes a few seconds to show in GitHub's reads, so apply reads again this many
+# times, this many seconds apart, before it reports a setting it just set as different.
+READS_AFTER_APPLY = 5
+READ_DELAY = float(os.environ.get("REPO_SETTINGS_READ_DELAY", "3"))
 
 
 class GhError(Exception):
@@ -167,6 +173,15 @@ def rows(state: dict, checks: list[str]) -> list[tuple[str, object, object, str]
     ]
 
 
+def to_fix(state: dict, checks: list[str]) -> list[str]:
+    """The writes in FIXES that would bring the differing settings in line, in order."""
+    todo: list[str] = []
+    for _, actual, wanted, how in rows(state, checks):
+        if actual != wanted and ":" not in how and how not in todo:
+            todo.append(how)
+    return todo
+
+
 def fmt(value: object) -> str:
     if isinstance(value, bool):
         return "on" if value else "off"
@@ -264,10 +279,7 @@ def main() -> int:
             return 2
 
         if args.mode == "apply":
-            todo = []
-            for _, actual, wanted, how in rows(state, checks):
-                if actual != wanted and ":" not in how and how not in todo:
-                    todo.append(how)
+            todo = to_fix(state, checks)
             for name in todo:
                 if name == "oidc" and state["federation"] and not args.change_oidc_subject:
                     print(f"repo-settings: left the OIDC subject alone: {FEDERATION_VARIABLE} "
@@ -279,7 +291,12 @@ def main() -> int:
                     print(f"repo-settings: set {name}")
                 except GhError as exc:
                     print(f"repo-settings: {exc}")
-            state = read(repo)
+            for attempt in range(READS_AFTER_APPLY if todo else 1):
+                if attempt:
+                    time.sleep(READ_DELAY)
+                state = read(repo)
+                if not to_fix(state, checks):
+                    break
         return report(repo, state, checks, source)
     except (GhError, OSError) as exc:
         print(f"repo-settings: {exc}", file=sys.stderr)
