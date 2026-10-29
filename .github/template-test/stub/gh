@@ -8,7 +8,8 @@ a write updates the file the way GitHub would, so repo-settings.py's `apply` and
 can be tested end to end. Every call other than a read is logged to $STUB_LOG, followed
 by its stdin when the call reads `--input -`.
 
-Like GitHub, it leaves generic-secret scanning off for a repo on a personal account.
+Like GitHub, it leaves generic-secret scanning off for a repo on a personal account, and
+it adds a milestone created with `gh api repos/<repo>/milestones -f title=...` to the list.
 """
 
 import json
@@ -40,11 +41,13 @@ def fields() -> dict:
     return out
 
 
-def jq(data, expr: str):
-    """The simple `.a.b` paths init-repo.sh uses with --jq."""
+def jq(data, expr: str) -> list:
+    """The simple paths init-repo.sh uses with --jq: `.a.b`, or `.[].a` over a list."""
+    if expr.startswith(".[]"):
+        return [v for item in data for v in jq(item, expr[3:] or ".")]
     for key in filter(None, expr.split(".")):
         data = data[key]
-    return data
+    return [data]
 
 
 if cmd == "auth status":
@@ -67,8 +70,10 @@ if cmd.startswith("api user --jq "):
 if cmd.startswith("api licenses/"):
     os.execv(os.environ["REAL_GH"], [os.environ["REAL_GH"], *args])
 
-method = option("-X") or "GET"
+method = option("-X") or ("POST" if "-f" in args or "-F" in args else "GET")
 path = next((a for a in args[1:] if a.startswith("repos/")), None) if args[:1] == ["api"] else None
+if path and "/milestones" in path:
+    path = path.split("?", 1)[0]
 
 if path and method == "GET":
     if "/contents/" in path:
@@ -84,7 +89,8 @@ if path and method == "GET":
     expr = option("--jq")
     answer = state[path]
     if expr:
-        print(jq(answer, expr))
+        for value in jq(answer, expr):
+            print(value)
     elif answer != {} or not path.endswith("/vulnerability-alerts"):
         print(json.dumps(answer))
     sys.exit(0)
@@ -105,6 +111,8 @@ if path.endswith("/private-vulnerability-reporting"):
     state[path] = {"enabled": True}
 elif path.endswith("/vulnerability-alerts"):
     state[path] = {}
+elif path.endswith("/milestones"):
+    state.setdefault(path, []).append(fields())
 elif path.endswith("/automated-security-fixes"):
     state[path] = {"enabled": True, "paused": False}
 elif path.endswith("/protection"):
