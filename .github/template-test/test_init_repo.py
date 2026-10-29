@@ -240,6 +240,7 @@ class InitRepo(unittest.TestCase):
         if ecosystem != "none":
             self.assertIn(f"package-ecosystem: {ecosystem}", dependabot)
         self.assertEqual(dependabot.count("package-ecosystem:"), 1 if ecosystem == "none" else 2)
+        self.assertEqual(dependabot.count("default-days: 7"), dependabot.count("package-ecosystem:"))
 
     def check_calls(self, log: str, repo: Path) -> None:
         for call in EXPECTED_CALLS:
