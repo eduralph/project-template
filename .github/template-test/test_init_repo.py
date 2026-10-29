@@ -15,7 +15,12 @@ its own.
 
 A second test checks the template's workflows themselves: every action is pinned to a
 full commit hash with its release in a comment, and every actions/checkout sets
-`persist-credentials: false`.
+`persist-credentials: false`. That includes the Rust-only workflow staged in
+.github/cargo/, which Dependabot does not read, so its pins must also match the ones in
+.github/workflows/ that Dependabot keeps current.
+
+For cargo, init-repo.sh pins the RustSec advisory database at the newest commit of its
+main branch; ADVISORY_DB_URL points it at a local stand-in here.
 
 The stub answers everything except license texts, which come from the real gh ($REAL_GH,
 found on PATH), so the non-Apache cases need network access and a gh login or GH_TOKEN.
@@ -99,6 +104,12 @@ def stdin_after(log: str, call: str) -> str:
     return "\n".join(body)
 
 
+def workflow_files(root: Path) -> list[Path]:
+    """The template's workflows, with the Rust-only one init-repo.sh moves in for cargo."""
+    return sorted([*(root / ".github" / "workflows").glob("*.yml"),
+                   *(root / ".github" / "cargo").glob("*.yml")])
+
+
 def required_checks(root: Path) -> list[str]:
     lines = (root / CHECKS_FILE).read_text(encoding="utf-8").splitlines()
     return [n for n in (line.split("#", 1)[0].strip() for line in lines) if n]
@@ -134,7 +145,7 @@ class Workflows(unittest.TestCase):
 
     def test_actions_pinned_and_credentials_not_persisted(self) -> None:
         problems = []
-        for wf in sorted((ROOT / ".github" / "workflows").glob("*.yml")):
+        for wf in workflow_files(ROOT):
             lines = wf.read_text(encoding="utf-8").splitlines()
             for n, line in enumerate(lines, 1):
                 m = USES.match(line)
@@ -155,6 +166,25 @@ class Workflows(unittest.TestCase):
                         problems.append(f"{where}: actions/checkout without "
                                         "`persist-credentials: false`")
         self.assertEqual(problems, [])
+
+    def test_staged_workflows_use_the_dependabot_kept_pins(self) -> None:
+        def pins(paths: list[Path]) -> dict[str, set[str]]:
+            found: dict[str, set[str]] = {}
+            for wf in paths:
+                for line in wf.read_text(encoding="utf-8").splitlines():
+                    m = USES.match(line)
+                    if m and "@" in m[2] and not line.lstrip().startswith("#"):
+                        action, ref = m[2].split("@", 1)
+                        found.setdefault(action, set()).add(f"{ref}{m[3]}")
+            return found
+
+        kept = pins(sorted((ROOT / ".github" / "workflows").glob("*.yml")))
+        staged = pins(sorted((ROOT / ".github" / "cargo").glob("*.yml")))
+        for action, refs in staged.items():
+            self.assertIn(action, kept, f".github/cargo uses {action}, which no workflow in "
+                          ".github/workflows uses, so Dependabot would never update it")
+            self.assertEqual(refs, kept[action], f"{action}: .github/cargo pins it differently "
+                             "from .github/workflows")
 
 
 class InitRepo(unittest.TestCase):
@@ -177,6 +207,12 @@ class InitRepo(unittest.TestCase):
             "REAL_GH": real_gh or "false",
             "PROJECT_CONTACT": "policy@example.org",
         }
+        # A stand-in for the RustSec advisory database: one commit on main.
+        advisory_db = self.tmp / "advisory-db.git"
+        git(self.tmp, "init", "-q", "-b", "main", str(advisory_db))
+        git(advisory_db, "commit", "-q", "--allow-empty", "-m", "advisories", env=self.env)
+        self.advisory_pin = git(advisory_db, "rev-parse", "HEAD").strip()
+        self.env["ADVISORY_DB_URL"] = str(advisory_db)
         # The real gh needs the user's config for its login when GH_TOKEN isn't set.
         if "GH_TOKEN" not in os.environ and "GITHUB_TOKEN" not in os.environ:
             self.env["GH_CONFIG_DIR"] = os.environ.get(
@@ -229,8 +265,8 @@ class InitRepo(unittest.TestCase):
         files = set(filter(None, git(repo, "ls-files", "-z").split("\0")))
         for path in TEMPLATE_ONLY:
             self.assertNotIn(path, files, f"{path} should be removed")
-        left = [p for p in sorted(files)
-                if PLACEHOLDER.search((repo / p).read_text(encoding="utf-8", errors="replace"))]
+        left = [p for p in sorted(files) if (repo / p).is_file()
+                and PLACEHOLDER.search((repo / p).read_text(encoding="utf-8", errors="replace"))]
         self.assertEqual(left, [], "placeholders left")
         self.assertNotIn("template:begin", (repo / "README.md").read_text(encoding="utf-8"))
         self.assertIn(LICENSE_MARKER[license_id], (repo / "LICENSE").read_text(encoding="utf-8"))
@@ -239,8 +275,34 @@ class InitRepo(unittest.TestCase):
         self.assertIn("package-ecosystem: github-actions", dependabot)
         if ecosystem != "none":
             self.assertIn(f"package-ecosystem: {ecosystem}", dependabot)
-        self.assertEqual(dependabot.count("package-ecosystem:"), 1 if ecosystem == "none" else 2)
-        self.assertEqual(dependabot.count("default-days: 7"), dependabot.count("package-ecosystem:"))
+        cargo = ecosystem == "cargo"
+        self.assertEqual(dependabot.count("package-ecosystem:"),
+                         1 + (ecosystem != "none") + cargo)
+        # Every entry but the advisory database's waits out the cooldown.
+        self.assertEqual(dependabot.count("default-days: 7"),
+                         dependabot.count("package-ecosystem:") - cargo)
+        self.check_advisory_pin(repo, files, dependabot, cargo)
+
+    def check_advisory_pin(self, repo: Path, files: set[str], dependabot: str,
+                           cargo: bool) -> None:
+        self.assertFalse(any(p.startswith(".github/cargo/") for p in files),
+                         ".github/cargo is template-only")
+        rust_files = {"deny.toml", "scripts/advisory-db.sh", ".github/workflows/advisories.yml",
+                      ".gitmodules", ".github/advisory-db"}
+        self.assertEqual(rust_files & files, rust_files if cargo else set())
+        self.assertEqual("package-ecosystem: gitsubmodule" in dependabot, cargo)
+        for model in ("docs/design/architecture/14-threat-model.md", ".oss-scanner/threat_model.md"):
+            self.assertEqual("`scripts/advisory-db.sh`" in
+                             (repo / model).read_text(encoding="utf-8"), cargo, model)
+        if not cargo:
+            return
+        self.assertEqual(git(repo, "ls-files", "-s", "--", ".github/advisory-db").split()[:2],
+                         ["160000", self.advisory_pin])
+        self.assertEqual(git(repo, "config", "-f", ".gitmodules", "submodule.advisory-db.path"),
+                         ".github/advisory-db\n")
+        self.assertTrue(os.access(repo / "scripts" / "advisory-db.sh", os.X_OK))
+        self.assertIn('db-path = "target/advisory-dbs"',
+                      (repo / "deny.toml").read_text(encoding="utf-8"))
 
     def check_calls(self, log: str, repo: Path) -> None:
         for call in EXPECTED_CALLS:
