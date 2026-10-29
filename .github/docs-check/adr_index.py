@@ -9,14 +9,17 @@ It reads the tracked files under docs/design/adr/ and reports, as `file: message
 
 - a file other than README.md that isn't named `NNNN-kebab-title.md`;
 - an ADR without YAML frontmatter, without `type: adr`, or whose `status:` is not exactly
-  Proposed, Accepted or Superseded (a comment after the value counts as part of it, which
-  is how docs-immutability reads it too);
+  Proposed, Accepted, Superseded, or `Superseded by ADR-NNNN` (further successors joined
+  by `and` or `,`; the form nl-shell's and stemma's immutability checks require). A
+  comment after the value counts as part of it, which is how docs-immutability reads it
+  too;
 - two ADRs with the same number, or a first heading that isn't `# NNNN. Title`;
 - in the table under `## Index`: an ADR missing or listed twice, a row for a file that
   doesn't exist, or a status that differs from the file (titles may differ: an index
   often carries a longer summary than the heading);
 - a Superseded ADR whose index row doesn't name an existing successor, whose successor's
-  `supersedes:` doesn't name it back, or whose `superseded-by:` names another number;
+  `supersedes:` doesn't name it back, or whose `superseded-by:` (or the successors its
+  status names) differs from the index;
 - an Accepted ADR whose `supersedes:` names an ADR that isn't Superseded (ADR-0004 records
   both sides in the same pull request).
 
@@ -37,6 +40,9 @@ INDEX = f"{ADR_DIR}/README.md"
 NAME_RE = re.compile(r"^(\d{4})-[a-z0-9]+(?:-[a-z0-9]+)*\.md$")
 LINK_RE = re.compile(r"\[[^\]]*\]\(([^)\s]+)\)")
 STATUSES = {"proposed": "Proposed", "accepted": "Accepted", "superseded": "Superseded"}
+# `Superseded by ADR-0013`, `Superseded by ADR-0016 and ADR-0017`, `..., ADR-0017`.
+SUPERSEDED_BY_RE = re.compile(r"superseded by (adr-\d{4}(?:\s*(?:,|and|, and)\s*adr-\d{4})*)",
+                              re.IGNORECASE)
 
 
 def git(*args: str) -> str:
@@ -127,9 +133,18 @@ def check(root: str, tracked: list[str]) -> list[str]:
             problems.append(f"{path}: frontmatter `type:` is not `adr`")
         raw = fields.get("status", "")
         status = STATUSES.get(raw.lower())
+        superseded_by = numbers(fields.get("superseded-by", ""))
+        named = SUPERSEDED_BY_RE.fullmatch(raw)
+        if named:
+            status = "Superseded"
+            in_status = numbers(named[1])
+            if superseded_by and superseded_by != in_status:
+                problems.append(f"{path}: `superseded-by:` differs from the ADRs `status:` names")
+            superseded_by = in_status
         if status is None:
             problems.append(
-                f"{path}: `status: {raw}` is not exactly Proposed, Accepted or Superseded"
+                f"{path}: `status: {raw}` is not exactly Proposed, Accepted, Superseded or "
+                "`Superseded by ADR-NNNN`"
                 + (" (move the comment to its own line)" if "#" in raw else "")
             )
         title = heading(text)
@@ -137,7 +152,7 @@ def check(root: str, tracked: list[str]) -> list[str]:
             problems.append(f"{path}: first heading is not `# {m[1]}. Title`")
         adrs[name] = {"path": path, "num": num, "status": status,
                       "supersedes": numbers(fields.get("supersedes", "")),
-                      "superseded_by": numbers(fields.get("superseded-by", ""))}
+                      "superseded_by": superseded_by}
 
     for num, names in sorted(by_number.items()):
         if len(names) > 1:
@@ -179,7 +194,8 @@ def check(root: str, tracked: list[str]) -> list[str]:
                     problems.append(f"{adrs[by_num[n]]['path']}: `supersedes:` does not name "
                                     f"{adr['num']:04d}, which the index says it replaces")
             if adr["superseded_by"] and successors and adr["superseded_by"] != successors:
-                problems.append(f"{adr['path']}: `superseded-by:` differs from the index")
+                problems.append(f"{adr['path']}: the successors in `superseded-by:` or the status "
+                                "differ from the index")
 
     for name, adr in sorted(adrs.items()):
         if name not in listed:

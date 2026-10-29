@@ -71,9 +71,18 @@ MUST_FAIL = {
     "comment after the status": (
         with_index({**GOOD, f"{ADR}/0002-license.md": adr("0002", "License", "Proposed   # Proposed | Accepted")}, GOOD_ROWS),
         "move the comment to its own line"),
-    "status names the successor": (
-        with_index({**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded by ADR-0004")}, GOOD_ROWS),
-        "is not exactly Proposed, Accepted or Superseded"),
+    "status names the successor in other words": (
+        with_index({**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded by the new way")}, GOOD_ROWS),
+        "is not exactly Proposed, Accepted, Superseded or `Superseded by ADR-NNNN`"),
+    "text after the named successor": (
+        with_index({**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded by ADR-0004 (in part)")}, GOOD_ROWS),
+        "is not exactly Proposed, Accepted, Superseded or `Superseded by ADR-NNNN`"),
+    "status names another successor than the index": (
+        with_index({**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded by ADR-0002")}, GOOD_ROWS),
+        "the successors in `superseded-by:` or the status differ from the index"),
+    "status and superseded-by disagree": (
+        with_index({**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded by ADR-0004", "superseded-by: 0002\n")}, GOOD_ROWS),
+        "`superseded-by:` differs from the ADRs `status:` names"),
     "file name not NNNN-kebab": (
         with_index({**GOOD, f"{ADR}/5-Bad_Name.md": adr("0005", "Bad", "Proposed")}, GOOD_ROWS),
         "5-Bad_Name.md: not named NNNN-kebab-title.md"),
@@ -98,7 +107,7 @@ MUST_FAIL = {
         "0004-new-way.md: `supersedes:` does not name 0003"),
     "superseded-by differs from the index": (
         with_index({**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded", "superseded-by: 0002\n")}, GOOD_ROWS),
-        "`superseded-by:` differs from the index"),
+        "the successors in `superseded-by:` or the status differ from the index"),
     "accepted ADR supersedes one not stamped": (
         with_index({**GOOD, f"{ADR}/0002-license.md": adr("0002", "License", "Accepted", "supersedes: 0001\n")},
                    replace_row("0002", "| [0002](0002-license.md) | License | Accepted |")),
@@ -115,6 +124,12 @@ MUST_PASS = {
     "no ADRs at all": {"README.md": "# Readme\n"},
     "snake_case in an index title": with_index(GOOD, replace_row(
         "0002", "| [0002](0002-license.md) | {{LICENSE_NAME}} and prompt_toolkit | Proposed |")),
+    "status names the successor (nl-shell's and stemma's form)": with_index(
+        {**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded by ADR-0004")}, GOOD_ROWS),
+    "status names two successors": with_index(
+        {**GOOD, f"{ADR}/0003-old-way.md": adr("0003", "Old way", "Superseded by ADR-0002 and ADR-0004"),
+         f"{ADR}/0002-license.md": adr("0002", "License", "Proposed", "supersedes: ADR-0003\n")},
+        replace_row("0003", "| [0003](0003-old-way.md) | Old way | Superseded by [0002](0002-license.md), [0004](0004-new-way.md) |")),
     "a Proposed ADR may name what it would supersede": with_index(
         {**GOOD, f"{ADR}/0002-license.md": adr("0002", "License", "Proposed", "supersedes: 0001\n")},
         GOOD_ROWS),
