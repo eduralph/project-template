@@ -4,9 +4,10 @@
 
 Each test starts from stub/fresh-repo.json (a repo as GitHub creates it), so `apply` has
 everything to do. It checks that apply leaves `check` clean and that a second apply
-changes nothing; that `check` fails and names the setting when any one setting is wrong;
-and the cases where GitHub decides: generic-secret scanning on personal and organization
-accounts, a private repo, and a repo whose OIDC subject a federation rule uses.
+changes nothing; that apply reads again while GitHub's reads lag its writes; that `check`
+fails and names the setting when any one setting is wrong; and the cases where GitHub
+decides: generic-secret scanning on personal and organization accounts, a private repo,
+and a repo whose OIDC subject a federation rule uses.
 
 init-repo.sh deletes this folder from repos created from the template.
 """
@@ -83,7 +84,8 @@ class RepoSettings(unittest.TestCase):
         shutil.copy(HERE / "stub" / "fresh-repo.json", self.state_file)
         self.log = self.tmp / "gh.log"
         self.env = {**os.environ, "PATH": f"{HERE / 'stub'}{os.pathsep}{os.environ['PATH']}",
-                    "STUB_STATE": str(self.state_file), "STUB_LOG": str(self.log)}
+                    "STUB_STATE": str(self.state_file), "STUB_LOG": str(self.log),
+                    "REPO_SETTINGS_READ_DELAY": "0"}
 
     def run_script(self, *args: str) -> subprocess.CompletedProcess[str]:
         self.log.write_text("", encoding="utf-8")
@@ -124,6 +126,20 @@ class RepoSettings(unittest.TestCase):
 
         self.assert_exit(self.run_script("apply", "eduralph/demo"), 0)
         self.assertEqual(self.writes(), [], "a second apply must change nothing")
+
+    def test_apply_waits_for_reads_to_catch_up(self) -> None:
+        # Each read of the repo's settings is a dozen gh calls, so a lag of 20 reads makes
+        # apply's first read-back stale and a later one current.
+        self.env["STUB_LAG"] = "20"
+        result = self.run_script("apply")
+        self.assert_exit(result, 0)
+        self.assertIn("repo-settings: 0 settings differ", result.stdout)
+        # A write that never shows up is still reported once the reads run out.
+        self.env["STUB_LAG"] = "1000"
+        self.edit(lambda s: s[REPO].update(has_wiki=True))
+        result = self.run_script("apply")
+        self.assert_exit(result, 1)
+        self.assertIn("  DIFF  wiki:", result.stdout)
 
     def test_check_names_each_wrong_setting(self) -> None:
         self.assert_exit(self.run_script("apply"), 0)
