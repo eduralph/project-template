@@ -17,7 +17,8 @@ A second test checks the template's workflows themselves: every action is pinned
 full commit hash with its release in a comment, and every actions/checkout sets
 `persist-credentials: false`. That includes the Rust-only workflow staged in
 .github/cargo/, which Dependabot does not read, so its pins must also match the ones in
-.github/workflows/ that Dependabot keeps current.
+.github/workflows/ that Dependabot keeps current. A `pull_request_target` workflow runs
+with write access, so it must not check out the PR's code or interpolate the event.
 
 For cargo, init-repo.sh pins the RustSec advisory database at the newest commit of its
 main branch; ADVISORY_DB_URL points it at a local stand-in here.
@@ -166,6 +167,15 @@ class Workflows(unittest.TestCase):
                         problems.append(f"{where}: actions/checkout without "
                                         "`persist-credentials: false`")
         self.assertEqual(problems, [])
+
+    def test_pull_request_target_never_touches_pr_content(self) -> None:
+        """That trigger runs with write access, so PR content must stay out of it."""
+        for wf in workflow_files(ROOT):
+            text = wf.read_text(encoding="utf-8")
+            if re.search(r"^\s*pull_request_target:", text, re.M):
+                with self.subTest(wf.name):
+                    self.assertNotIn("actions/checkout", text)
+                    self.assertNotIn("${{ github.event", text)
 
     def test_staged_workflows_use_the_dependabot_kept_pins(self) -> None:
         def pins(paths: list[Path]) -> dict[str, set[str]]:

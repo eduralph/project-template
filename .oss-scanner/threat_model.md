@@ -24,6 +24,14 @@ Treat all of the following as attacker-controlled:
 
 Trusted: _what is not attacker-controlled, and why._
 
+Already in place from the template: `.github/workflows/welcome-first-time-contributor.yml`
+runs on `pull_request_target`, so it holds a token with `pull-requests: write` (its only
+permission) while handling a pull request from any fork. The PR's code, title, body and
+branch name are attacker-controlled. The workflow never checks the PR out and never
+interpolates the event payload into its script; it reads only the author's login and the
+PR number from the payload and posts a fixed comment. A change that adds an
+`actions/checkout` step or a `${{ github.event` expression to that workflow is in scope.
+
 ## What must hold
 
 - _The properties a finding breaks. These are what the security review checks._

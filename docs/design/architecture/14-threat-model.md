@@ -31,6 +31,20 @@ losing it means for users._
 _Where data or control crosses from less trusted to more trusted: network inputs, files from
 users, plugins, other services. A diagram in `diagrams/` helps._
 
+- **Pull requests from forks, in GitHub Actions.** A PR's code, title, body and branch name
+  are attacker-controlled: anyone can open one. The checks run on `pull_request`, where the
+  token is read-only and `actions/checkout` keeps no credentials, so PR-supplied code runs
+  without write access. One workflow, `welcome-first-time-contributor.yml`, runs on
+  `pull_request_target` instead, because a fork PR's `pull_request` token cannot comment;
+  it holds `pull-requests: write` (its only permission) while handling a PR from anyone.
+  That boundary holds only while the workflow neither checks the PR out nor interpolates
+  the event payload into its script. It reads the author's login and the PR number through
+  `context.payload` at run time and posts a fixed comment. The template checks both rules
+  before the workflow ships (`test_pull_request_target_never_touches_pr_content` in its
+  `template-test`): no `actions/checkout` step and no `${{ github.event` expression in a
+  `pull_request_target` workflow. That test is not copied into this project, so a change
+  to the workflow is reviewed by hand against the same two rules.
+
 ## 14.3 Adversaries
 
 _Who might attack and what they can already do: an anonymous network user, an authenticated

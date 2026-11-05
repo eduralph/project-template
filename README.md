@@ -10,7 +10,8 @@
 >   governance under `docs/governance/`, and the `docs-immutability` check;
 > - the PR rules: DCO sign-off (`dco`) and a linked issue on every PR
 >   (`require-linked-issue`), plus a contributing guide that points at the
->   [shared one](https://github.com/eduralph/.github/blob/main/CONTRIBUTING.md);
+>   [shared one](https://github.com/eduralph/.github/blob/main/CONTRIBUTING.md), and a
+>   welcome comment on a contributor's first PR;
 > - issue handling: bug and enhancement templates, the `new` label kept in step with the
 >   milestone, and automated priority triage (ADR-0005) that stays off until it is set up;
 > - SECURITY.md, Dependabot, the agent rules in AGENTS.md and Claude Code permissions;
