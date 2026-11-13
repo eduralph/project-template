@@ -247,10 +247,17 @@ python3 -I scripts/repo-settings.py apply "$REPO" || SETTINGS=$?
 # .pre-commit-config.yaml blocks Claude Code's machine-local settings (which record
 # approved commands verbatim, tokens included) and leaked credentials. Git hooks are
 # not cloned, so it only runs once activated in each clone.
+# The hook reads a copy of the config from this freshly initialized main, kept in the git
+# directory, so a branch checked out later (a fork PR) cannot redefine what runs on commit.
 if command -v pre-commit >/dev/null 2>&1; then
-  pre-commit install
+  GITDIR="$(git rev-parse --path-format=absolute --git-common-dir)"
+  git show HEAD:.pre-commit-config.yaml > "$GITDIR/secret-guard.yaml"
+  printf '#!/bin/sh\nexec pre-commit run --config "%s/secret-guard.yaml" --hook-stage pre-commit\n' \
+    "$GITDIR" > "$GITDIR/hooks/pre-commit"
+  chmod +x "$GITDIR/hooks/pre-commit"
+  echo "secret guard active (reviewed copy: $GITDIR/secret-guard.yaml)"
 else
-  echo "pre-commit not found: pipx install pre-commit && pre-commit install"
+  echo "pre-commit not found: pipx install pre-commit==4.7.0, then follow the header of .pre-commit-config.yaml"
 fi
 
 # --- 4. what is left by hand ---------------------------------------------------------
@@ -260,8 +267,8 @@ SUBJECT="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_p
 cat <<EOF
 
 Done. Left to do by hand:
-  - In every other clone of this repo, activate the secret guard once:
-    pipx install pre-commit && pre-commit install
+  - In every other clone of this repo, activate the secret guard once: the steps are in
+    the header of .pre-commit-config.yaml (re-run them after that file changes on main).
   - Set up the project's checks: replace the placeholder step in
     .github/workflows/ci.yml and name the same command in CONTRIBUTING.md. Until then
     the required 'gate' check fails every pull request.
