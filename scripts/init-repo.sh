@@ -243,6 +243,20 @@ echo "Labels ready"
 SETTINGS=0
 python3 -I scripts/repo-settings.py apply "$REPO" || SETTINGS=$?
 
+# --- 3b. secret guard --------------------------------------------------------------
+# .pre-commit-config.yaml blocks Claude Code's machine-local settings (which record
+# approved commands verbatim, tokens included) and leaked credentials. Git hooks are
+# not cloned, so it only runs once activated in each clone.
+# The default branch is the main just initialized, so activate from HEAD. The hook reads
+# copies kept in the git directory, so a branch checked out later (a fork PR) cannot redefine
+# what runs on commit.
+if command -v pre-commit >/dev/null 2>&1; then
+  s=$(PATH=/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin git show HEAD:.secret-guard/activate.sh) && SECRET_GUARD_REF=HEAD /bin/sh -c "$s" activate ||
+    echo 'secret guard NOT active; run: s=$(PATH=/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin git show refs/remotes/origin/HEAD:.secret-guard/activate.sh) && /bin/sh -c "$s" activate' >&2
+else
+  echo 'pre-commit not found: pipx install pre-commit==4.7.0, then: s=$(PATH=/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin git show refs/remotes/origin/HEAD:.secret-guard/activate.sh) && /bin/sh -c "$s" activate'
+fi
+
 # --- 4. what is left by hand ---------------------------------------------------------
 SUBJECT="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_prefix)"
 [ "$SETTINGS" = 0 ] || echo "Some settings didn't take (DIFF above); fix them, then run
@@ -250,6 +264,8 @@ SUBJECT="$(gh api "repos/$REPO/actions/oidc/customization/sub" --jq .sub_claim_p
 cat <<EOF
 
 Done. Left to do by hand:
+  - In every other clone of this repo, activate the secret guard once:
+    s=\$(PATH=/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin git show refs/remotes/origin/HEAD:.secret-guard/activate.sh) && /bin/sh -c "\$s" activate
   - Set up the project's checks: replace the placeholder step in
     .github/workflows/ci.yml and name the same command in CONTRIBUTING.md. Until then
     the required 'gate' check fails every pull request.
