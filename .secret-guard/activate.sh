@@ -156,7 +156,8 @@ fi
 # Git in each worktree uses that worktree's effective core.hooksPath. A per-worktree setting
 # (extensions.worktreeConfig) or a conditional include (includeIf "gitdir:" or "onbranch:")
 # can make it differ from the value checked here, and Git there would not run the guard.
-# Refuse any worktree whose effective value differs.
+# Refuse any worktree whose effective value differs. The comparison is literal: resolving
+# symlinks could accept a path that runs through a checkout, so equal means written equally.
 if [ "${1:-}" != --uninstall ]; then
   differ=$(printf '%s\n' "$worktrees" | while IFS= read -r w; do
     [ -n "$w" ] || continue
@@ -170,7 +171,8 @@ if [ "${1:-}" != --uninstall ]; then
   if [ -n "$differ" ]; then
     die "these worktrees resolve core.hooksPath differently from here (a per-worktree setting or" \
       "an includeIf), so Git there would not run the guard:" "$differ" \
-      "Make core.hooksPath the same in every worktree (or unset it everywhere), then re-run."
+      "Write core.hooksPath identically in every worktree (same absolute path, no trailing" \
+      "slash difference), or unset it everywhere, then re-run."
   fi
 fi
 

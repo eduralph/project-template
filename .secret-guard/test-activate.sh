@@ -7,7 +7,9 @@
 # FAIL.
 set -u
 SG=$(cd "$(dirname -- "$0")/.." && pwd -P)
-T=$(mktemp -d); trap 'rm -rf "$T"' EXIT; cd "$T"
+T=$(mktemp -d) && [ -n "$T" ] && [ -d "$T" ] || { echo "cannot create a temporary directory" >&2; exit 1; }
+trap 'rm -rf "$T"' EXIT
+cd "$T" || exit 1
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$T/gitconfig"
 printf '[user]\n\tname = guard test\n\temail = guard-test@example.invalid\n[init]\n\tdefaultBranch = main\n' > "$GIT_CONFIG_GLOBAL"
 fails=0
