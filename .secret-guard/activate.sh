@@ -65,7 +65,11 @@ req='exec "$(git rev-parse --path-format=absolute --git-common-dir)/secret-guard
 # --- where branches can write ---------------------------------------------------------------
 # Every worktree of this repository is checkout content a branch controls.
 # A bare repository's own entry (marked `bare`) is a git directory, not a checkout.
-worktrees=$(git worktree list --porcelain |
+# -z: without it, paths with non-ASCII or special characters come back C-quoted and would
+# be skipped below. Git before 2.36 lacks -z; refuse rather than check no worktree.
+git worktree list --porcelain -z >/dev/null 2>&1 ||
+  die "git worktree list --porcelain -z failed; the guard needs Git 2.36 or newer."
+worktrees=$(git worktree list --porcelain -z | tr '\000' '\n' |
   awk '/^worktree /{ if (p != "" && !b) print p; p = substr($0, 10); b = 0; next }
        /^bare$/ { b = 1 }
        END { if (p != "" && !b) print p }' |
@@ -138,12 +142,25 @@ chain_unsafe() {
 }
 
 # --- core.hooksPath ---------------------------------------------------------------------------
+nl='
+'
+# get_hooks_path DIR: set hpv to DIR's effective core.hooksPath exactly as Git resolves it.
+# Command substitution strips trailing newlines, so a sentinel keeps them.
+get_hooks_path() {
+  hpv=$(git -C "$1" config --path core.hooksPath && echo x) || return 1
+  hpv=${hpv%x}; hpv=${hpv%"$nl"}
+}
 hp=""
 hooks_path=""
 hooks_set=no
 if git config --get core.hooksPath >/dev/null 2>&1; then
   hooks_set=yes
-  hooks_path=$(git config --path core.hooksPath)   # --path: ~ expands as Git does
+  get_hooks_path . || die "core.hooksPath is set but cannot be read."
+  hooks_path=$hpv   # --path: ~ expands as Git does
+  case $hooks_path in *"$nl"*)
+    die "core.hooksPath contains a newline, which this check cannot compare reliably; set a" \
+      "plain absolute path, then re-run.";;
+  esac
   [ -n "$hooks_path" ] || die "core.hooksPath is set but empty, so Git runs no hooks at all;" \
     "unset it (git config --unset core.hooksPath) or point it at a directory, then re-run."
   case $hooks_path in
@@ -162,8 +179,8 @@ if [ "${1:-}" != --uninstall ]; then
   differ=$(printf '%s\n' "$worktrees" | while IFS= read -r w; do
     [ -n "$w" ] || continue
     if git -C "$w" config --get core.hooksPath >/dev/null 2>&1; then
-      v=$(git -C "$w" config --path core.hooksPath 2>/dev/null) || v=""
-      { [ "$hooks_set" = yes ] && [ -n "$v" ] && [ "$v" = "$hooks_path" ]; } || echo "$w"
+      get_hooks_path "$w" 2>/dev/null || hpv=""
+      { [ "$hooks_set" = yes ] && [ -n "$hpv" ] && [ "$hpv" = "$hooks_path" ]; } || echo "$w"
     else
       [ "$hooks_set" = no ] || echo "$w"
     fi

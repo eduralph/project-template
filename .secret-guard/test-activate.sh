@@ -242,5 +242,19 @@ echo ok > settings.local.json.md; git add settings.local.json.md; n=$(commits); 
 [ "$(commits)" != "$n" ] && ok "AC3 unrelated name still commits" || bad AC3
 cd "$T"
 
+# AD1: a non-ASCII worktree path (C-quoted without -z) with its own hooksPath is refused
+git clone -q up ad1; cd ad1; git config extensions.worktreeConfig true; git worktree add -q "$T/ad1-wt-ü" -b ad1wt
+mkdir -p "$T/ad1-wt-ü/.hooks"; git -C "$T/ad1-wt-ü" config --worktree core.hooksPath "$T/ad1-wt-ü/.hooks"
+act >/dev/null 2>&1 && bad "AD1 non-ASCII worktree override accepted" || ok "AD1 non-ASCII worktree override refused"
+git -C "$T/ad1-wt-ü" config --worktree --unset core.hooksPath; act >/dev/null 2>&1 && ok "AD2 non-ASCII worktree without override activates" || bad AD2
+# AD3: a worktree's hooksPath differing only by a trailing newline is refused
+mkdir -p "$T/ad3-hooks"; printf '#!/bin/sh\nexec "$(git rev-parse --path-format=absolute --git-common-dir)/secret-guard-run" "$@"\n' > "$T/ad3-hooks/pre-commit"; chmod +x "$T/ad3-hooks/pre-commit"
+git config core.hooksPath "$T/ad3-hooks"; git -C "$T/ad1-wt-ü" config --worktree core.hooksPath "$T/ad3-hooks"$'\n'
+act >/dev/null 2>&1 && bad "AD3 trailing-newline hooksPath accepted" || ok "AD3 trailing-newline hooksPath refused"
+# AD4: the main hooksPath with a trailing newline is refused
+git -C "$T/ad1-wt-ü" config --worktree --unset core.hooksPath; git config core.hooksPath "$T/ad3-hooks"$'\n'
+act >/dev/null 2>&1 && bad "AD4 newline in hooksPath accepted" || ok "AD4 newline in hooksPath refused"
+cd "$T"
+
 echo "$fails failed"
 [ "$fails" -eq 0 ]
