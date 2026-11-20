@@ -257,5 +257,16 @@ git -C "$T/ad1-wt-ü" config --worktree --unset core.hooksPath; git config core.
 act >/dev/null 2>&1 && bad "AD4 newline in hooksPath accepted" || ok "AD4 newline in hooksPath refused"
 cd "$T"
 
+# AE1: a registered worktree that cannot be entered (unmounted, moved) is refused
+git clone -q up ae1; cd ae1; git worktree add -q "$T/ae1-wt" -b ae1wt; mv "$T/ae1-wt" "$T/ae1-away"
+act >/dev/null 2>&1 && bad "AE1 unreachable worktree accepted" || ok "AE1 unreachable worktree refused"
+# AE2: back in place it activates; pruned it activates too
+mv "$T/ae1-away" "$T/ae1-wt"; act >/dev/null 2>&1 && ok "AE2 worktree back, activates" || bad AE2
+rm -rf "$T/ae1-wt"; git worktree prune; act >/dev/null 2>&1 && ok "AE3 pruned worktree, activates" || bad AE3
+# AE4: uninstall still works with an unreachable worktree
+git worktree add -q "$T/ae4-wt" -b ae4wt; mv "$T/ae4-wt" "$T/ae4-away"
+act --uninstall >/dev/null 2>&1 && [ ! -e .git/secret-guard-run ] && ok "AE4 uninstall works with unreachable worktree" || bad AE4
+cd "$T"
+
 echo "$fails failed"
 [ "$fails" -eq 0 ]

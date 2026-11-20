@@ -69,11 +69,26 @@ req='exec "$(git rev-parse --path-format=absolute --git-common-dir)/secret-guard
 # be skipped below. Git before 2.36 lacks -z; refuse rather than check no worktree.
 git worktree list --porcelain -z >/dev/null 2>&1 ||
   die "git worktree list --porcelain -z failed; the guard needs Git 2.36 or newer."
-worktrees=$(git worktree list --porcelain -z | tr '\000' '\n' |
+registered=$(git worktree list --porcelain -z | tr '\000' '\n' |
   awk '/^worktree /{ if (p != "" && !b) print p; p = substr($0, 10); b = 0; next }
        /^bare$/ { b = 1 }
-       END { if (p != "" && !b) print p }' |
-  while IFS= read -r w; do (cd "$w" 2>/dev/null && pwd -P) || true; done)
+       END { if (p != "" && !b) print p }')
+# A registered worktree that cannot be entered (an unmounted drive, a moved directory) cannot
+# be checked, yet Git uses it again once it is back; refuse until it is back or pruned.
+unreachable=$(printf '%s\n' "$registered" | while IFS= read -r w; do
+  [ -n "$w" ] || continue
+  (cd "$w" 2>/dev/null) || echo "$w"
+done)
+if [ -n "$unreachable" ] && [ "${1:-}" != --uninstall ]; then
+  die "these registered worktrees cannot be entered, so their hook settings cannot be checked:" \
+    "$unreachable" \
+    "Make them reachable again (mount the drive), or remove them (git worktree remove, or" \
+    "git worktree prune for deleted ones), then re-run."
+fi
+worktrees=$(printf '%s\n' "$registered" | while IFS= read -r w; do
+  [ -n "$w" ] || continue
+  (cd "$w" 2>/dev/null && pwd -P) || true
+done)
 
 git_dir_real=$(cd "$d" && pwd -P)
 
