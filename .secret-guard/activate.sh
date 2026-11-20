@@ -29,6 +29,14 @@
 # - A separate git directory placed inside an ignored path of a worktree is not detected.
 # - --uninstall removes only hooks with the managed marker; an older two-line guard hook
 #   from before the marker stays and must be deleted by hand.
+# - core.hooksPath is compared across worktrees as it resolves at activation. A conditional
+#   include that starts to match later (an "onbranch:" include after a branch switch, a
+#   "gitdir:" include for a worktree added afterwards) or a later change to global config
+#   can still point Git at other hooks; re-run activation after adding a worktree or
+#   changing includes.
+# - Gitleaks rules that need a file's path as well as its content (hashicorp-tf-password,
+#   for one) cannot fire in the staged-blob pass, which gets no file name; the git-diff pass
+#   still applies them, except to files a branch marks -diff.
 # - Worktree paths containing a newline are not recognised as checkouts.
 # - --no-verify skips every hook; push protection on GitHub is the backstop.
 set -eu
@@ -50,7 +58,7 @@ esac
 
 d=$(git rev-parse --path-format=absolute --git-common-dir)
 hook="$d/hooks/pre-commit"
-mark="# secret-guard managed hook v10"
+mark="# secret-guard managed hook v11"
 # The line a core.hooksPath hook (outside every checkout) must contain to run the guard.
 req='exec "$(git rev-parse --path-format=absolute --git-common-dir)/secret-guard-run" "$@"'
 
@@ -62,20 +70,6 @@ worktrees=$(git worktree list --porcelain |
        /^bare$/ { b = 1 }
        END { if (p != "" && !b) print p }' |
   while IFS= read -r w; do (cd "$w" 2>/dev/null && pwd -P) || true; done)
-
-# With extensions.worktreeConfig, each worktree may set its own core.hooksPath, and Git in
-# that worktree ignores the hook installed here. Refuse any such override.
-if [ "$(git config --bool extensions.worktreeConfig 2>/dev/null || true)" = true ]; then
-  overrides=$(printf '%s\n' "$worktrees" | while IFS= read -r w; do
-    [ -n "$w" ] || continue
-    if git -C "$w" config --worktree --get core.hooksPath >/dev/null 2>&1; then echo "$w"; fi
-  done)
-  if [ -n "$overrides" ] && [ "${1:-}" != --uninstall ]; then
-    die "these worktrees set their own core.hooksPath (extensions.worktreeConfig), so Git there" \
-      "would not run the guard:" "$overrides" \
-      "Unset it in each (git -C <worktree> config --worktree --unset core.hooksPath), then re-run."
-  fi
-fi
 
 git_dir_real=$(cd "$d" && pwd -P)
 
@@ -157,6 +151,27 @@ if git config --get core.hooksPath >/dev/null 2>&1; then
     *) die "core.hooksPath ($hooks_path) is relative, so each worktree resolves it to a different" \
          "directory; set an absolute path outside every checkout, then re-run.";;
   esac
+fi
+
+# Git in each worktree uses that worktree's effective core.hooksPath. A per-worktree setting
+# (extensions.worktreeConfig) or a conditional include (includeIf "gitdir:" or "onbranch:")
+# can make it differ from the value checked here, and Git there would not run the guard.
+# Refuse any worktree whose effective value differs.
+if [ "${1:-}" != --uninstall ]; then
+  differ=$(printf '%s\n' "$worktrees" | while IFS= read -r w; do
+    [ -n "$w" ] || continue
+    if git -C "$w" config --get core.hooksPath >/dev/null 2>&1; then
+      v=$(git -C "$w" config --path core.hooksPath 2>/dev/null) || v=""
+      { [ "$hooks_set" = yes ] && [ -n "$v" ] && [ "$v" = "$hooks_path" ]; } || echo "$w"
+    else
+      [ "$hooks_set" = no ] || echo "$w"
+    fi
+  done)
+  if [ -n "$differ" ]; then
+    die "these worktrees resolve core.hooksPath differently from here (a per-worktree setting or" \
+      "an includeIf), so Git there would not run the guard:" "$differ" \
+      "Make core.hooksPath the same in every worktree (or unset it everywhere), then re-run."
+  fi
 fi
 
 if [ "${1:-}" = --uninstall ]; then
