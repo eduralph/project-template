@@ -73,11 +73,16 @@ registered=$(git worktree list --porcelain -z | tr '\000' '\n' |
   awk '/^worktree /{ if (p != "" && !b) print p; p = substr($0, 10); b = 0; next }
        /^bare$/ { b = 1 }
        END { if (p != "" && !b) print p }')
-# A registered worktree that cannot be entered (an unmounted drive, a moved directory) cannot
-# be checked, yet Git uses it again once it is back; refuse until it is back or pruned.
+git_dir_real=$(cd "$d" && pwd -P)
+# A registered worktree that is not there as itself (an unmounted drive, even one whose empty
+# mountpoint remains, or a moved directory) cannot be checked, yet Git uses it again once it
+# is back; refuse until it is back or pruned. "There as itself" means the path resolves to
+# this repository's git directory.
 unreachable=$(printf '%s\n' "$registered" | while IFS= read -r w; do
   [ -n "$w" ] || continue
-  (cd "$w" 2>/dev/null) || echo "$w"
+  c=$(cd "$w" 2>/dev/null && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR \
+        git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
+    c=$(cd "$c" 2>/dev/null && pwd -P) && [ "$c" = "$git_dir_real" ] || echo "$w"
 done)
 if [ -n "$unreachable" ] && [ "${1:-}" != --uninstall ]; then
   die "these registered worktrees cannot be entered, so their hook settings cannot be checked:" \
@@ -90,7 +95,6 @@ worktrees=$(printf '%s\n' "$registered" | while IFS= read -r w; do
   (cd "$w" 2>/dev/null && pwd -P) || true
 done)
 
-git_dir_real=$(cd "$d" && pwd -P)
 
 # in_worktree PATH (physical): PATH lies in a worktree of this repository. Paths in the git
 # directory are not checkout content, unless a worktree itself lives inside the git directory.

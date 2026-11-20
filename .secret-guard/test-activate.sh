@@ -28,11 +28,11 @@ printf '#!/bin/sh\necho x > .env\ngit add -f .env\n' > .git/hooks/pre-commit; ch
 act >/dev/null 2>&1 && bad "A0 custom hook kept silently" || ok "A0 custom hook refused until reviewed"
 mv .git/hooks/pre-commit .git/hooks/pre-commit.legacy
 act >/dev/null 2>&1 && bad "A1 legacy enabled without approval" || ok "A1 legacy needs approval"
-act --approve-legacy >/dev/null; echo a > a; git add a; n=$(commits); git commit -qm a >/dev/null 2>&1
+act --approve-legacy >/dev/null || bad "A activation"; echo a > a; git add a; n=$(commits); git commit -qm a >/dev/null 2>&1
 [ "$(commits)" = "$n" ] && ok "A legacy hook runs first; the .env it stages is blocked" || bad A
 git reset -q; rm -f .env; rm .git/hooks/pre-commit.legacy
 # B: re-run keeps a single managed hook, no new legacy
-act >/dev/null; [ ! -e .git/hooks/pre-commit.legacy ] && ok "B re-run harmless" || bad B
+act >/dev/null && [ ! -e .git/hooks/pre-commit.legacy ] && ok "B re-run harmless" || bad B
 # C: token blocked
 tok > l; git add l; n=$(commits); git commit -qm l >/dev/null 2>&1; [ "$(commits)" = "$n" ] && ok "C token blocked" || bad C; git reset -q; rm l
 # D: branch with evil config + .gitleaks.toml allowlist
@@ -45,14 +45,15 @@ git add .; git commit -qm evil >/dev/null 2>&1; tok > l; git add l; n=$(commits)
 echo 'l:github-pat:1' > .gitleaksignore; git add .gitleaksignore; n=$(commits); git commit -qm gi >/dev/null 2>&1
 [ "$(commits)" = "$n" ] && ok "E .gitleaksignore refused" || bad E; git reset -q; rm .gitleaksignore; git checkout -q -f main
 # F: worktree
-git worktree add -q "$T/wt" -b w; (cd "$T/wt"; tok > l; git add l; n=$(git rev-list --count HEAD); git commit -qm l >/dev/null 2>&1; [ "$(git rev-list --count HEAD)" = "$n" ] && ok "F worktree blocks token" || bad F)
+git worktree add -q "$T/wt" -b w
+if (cd "$T/wt" && tok > l && git add l && n=$(git rev-list --count HEAD) && { git commit -qm l >/dev/null 2>&1; [ "$(git rev-list --count HEAD)" = "$n" ]; }); then ok "F worktree blocks token"; else bad F; fi
 # J: uninstall restores a kept hook
 printf '#!/bin/sh\nexit 0\n' > .git/hooks/pre-commit.legacy; chmod +x .git/hooks/pre-commit.legacy
-act --uninstall >/dev/null; [ -x .git/hooks/pre-commit ] && ! grep -q 'secret-guard' .git/hooks/pre-commit && [ ! -e .git/secret-guard-run ] && ok "J uninstall restores kept hook" || bad J
+act --uninstall >/dev/null && [ -x .git/hooks/pre-commit ] && ! grep -q 'secret-guard' .git/hooks/pre-commit && [ ! -e .git/secret-guard-run ] && ok "J uninstall restores kept hook" || bad J
 rm -f .git/hooks/pre-commit
 # L: an older guard hook (v1 printf style) is replaced, not kept as legacy
 printf '#!/bin/sh\nexec pre-commit run --config "%s/secret-guard.yaml" --hook-stage pre-commit\n' "$PWD/.git" > .git/hooks/pre-commit; chmod +x .git/hooks/pre-commit
-act >/dev/null; [ ! -e .git/hooks/pre-commit.legacy ] && grep -q 'managed hook v11' .git/hooks/pre-commit && ok "L older guard hook replaced" || bad L
+act >/dev/null && [ ! -e .git/hooks/pre-commit.legacy ] && grep -q 'managed hook v11' .git/hooks/pre-commit && ok "L older guard hook replaced" || bad L
 cd "$T"
 
 # G: core.hooksPath
@@ -80,7 +81,7 @@ cd "$T"
 
 # I: pre-commit found only on the activating PATH
 git clone -q up i; cd i; mkdir -p "$T/ibin"; ln -sf "$(command -v pre-commit)" "$T/ibin/pre-commit"
-PATH="$T/ibin:/usr/bin:/bin" act >/dev/null
+PATH="$T/ibin:/usr/bin:/bin" act >/dev/null || bad "I activation"
 echo ok > ok; git add ok; n=$(commits); PATH=/usr/bin:/bin git commit -qm ok >/dev/null 2>&1
 [ "$(commits)" = $((n+1)) ] && ok "I recorded pre-commit used outside the activating PATH" || bad I
 cd "$T"
@@ -98,7 +99,7 @@ git checkout -q -b o; echo 'app.cfg -diff' > .gitattributes; git add .gitattribu
 tok > app.cfg; git add app.cfg; n=$(commits); git commit -qm o >/dev/null 2>&1; [ "$(commits)" = "$n" ] && ok "O -diff attribute does not hide token" || bad O; git reset -q; rm app.cfg; git checkout -q -f main
 # P: a local branch named origin/HEAD does not shadow the remote ref
 git checkout -q -b origin/HEAD; printf '#!/bin/sh\ntouch %s/PWNED2\n' "$T" > .secret-guard/activate.sh; git commit -qam evil >/dev/null 2>&1; git checkout -q main
-act >/dev/null 2>&1; [ ! -e "$T/PWNED2" ] && ok "P branch named origin/HEAD not executed" || bad P
+act >/dev/null 2>&1 && [ ! -e "$T/PWNED2" ] && ok "P branch named origin/HEAD not executed" || bad P
 SECRET_GUARD_REF=origin/HEAD sh -c "$(git show refs/remotes/origin/HEAD:.secret-guard/activate.sh)" activate >/dev/null 2>&1 && bad "P2 short ref accepted" || ok "P2 short SECRET_GUARD_REF refused"
 cd "$T"
 
@@ -174,7 +175,7 @@ tok > '0:payload.txt'; git add -- '0:payload.txt'; n=$(commits); git commit -qm 
 [ "$(commits)" = "$n" ] && ok "X1 colon filename scanned as itself" || bad X1; git reset -q; rm -f -- '0:payload.txt'
 # X2: a checkout-local git first on PATH is not executed by activation
 mkdir -p .venv/bin; printf '#!/bin/sh\ntouch %s/PWNED_actgit\nexec /usr/bin/git "$@"\n' "$T" > .venv/bin/git; chmod +x .venv/bin/git
-PATH="$PWD/.venv/bin:$PATH" act >/dev/null 2>&1
+PATH="$PWD/.venv/bin:$PATH" act >/dev/null 2>&1 || bad "X2 activation"
 [ -e "$T/PWNED_actgit" ] && bad "X2 checkout git ran during activation" || ok "X2 checkout-local git not used by activation"; rm -rf .venv
 cd "$T"
 
@@ -233,7 +234,7 @@ printf '[core]\n\thooksPath = %s\n' "$T" > "$T/ab4-inc.cfg"; git config includeI
 act >/dev/null 2>&1 && bad "AB4 worktree hooksPath differing from main accepted" || ok "AB4 worktree hooksPath differing from main refused"
 cd "$T"
 # AC: case variants of protected names are blocked
-git clone -q up ac; cd ac; act >/dev/null 2>&1
+git clone -q up ac; cd ac; act >/dev/null 2>&1 || bad "AC activation"
 mkdir -p .Claude; echo '{}' > .Claude/Settings.Local.json; git add -f .Claude; n=$(commits); git commit -qm ac >/dev/null 2>&1
 [ "$(commits)" = "$n" ] && ok "AC1 .Claude/Settings.Local.json blocked" || bad AC1; git reset -q; rm -r .Claude
 echo x=1 > .ENV; git add -f .ENV; n=$(commits); git commit -qm ac >/dev/null 2>&1
@@ -266,6 +267,12 @@ rm -rf "$T/ae1-wt"; git worktree prune; act >/dev/null 2>&1 && ok "AE3 pruned wo
 # AE4: uninstall still works with an unreachable worktree
 git worktree add -q "$T/ae4-wt" -b ae4wt; mv "$T/ae4-wt" "$T/ae4-away"
 act --uninstall >/dev/null 2>&1 && [ ! -e .git/secret-guard-run ] && ok "AE4 uninstall works with unreachable worktree" || bad AE4
+cd "$T"
+
+# AE5: a worktree path that is an empty directory now (an unmounted volume's mountpoint) is refused
+git clone -q up ae5; cd ae5; git worktree add -q "$T/ae5-wt" -b ae5wt; mv "$T/ae5-wt" "$T/ae5-away"; mkdir "$T/ae5-wt"
+act >/dev/null 2>&1 && bad "AE5 empty mountpoint accepted" || ok "AE5 empty mountpoint refused"
+rmdir "$T/ae5-wt"; mv "$T/ae5-away" "$T/ae5-wt"; act >/dev/null 2>&1 && ok "AE6 remounted worktree activates" || bad AE6
 cd "$T"
 
 echo "$fails failed"
