@@ -74,22 +74,6 @@ registered=$(git worktree list --porcelain -z | tr '\000' '\n' |
        /^bare$/ { b = 1 }
        END { if (p != "" && !b) print p }')
 git_dir_real=$(cd "$d" && pwd -P)
-# A registered worktree that is not there as itself (an unmounted drive, even one whose empty
-# mountpoint remains, or a moved directory) cannot be checked, yet Git uses it again once it
-# is back; refuse until it is back or pruned. "There as itself" means the path resolves to
-# this repository's git directory.
-unreachable=$(printf '%s\n' "$registered" | while IFS= read -r w; do
-  [ -n "$w" ] || continue
-  c=$(cd "$w" 2>/dev/null && env -u GIT_DIR -u GIT_WORK_TREE -u GIT_INDEX_FILE -u GIT_COMMON_DIR \
-        git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) &&
-    c=$(cd "$c" 2>/dev/null && pwd -P) && [ "$c" = "$git_dir_real" ] || echo "$w"
-done)
-if [ -n "$unreachable" ] && [ "${1:-}" != --uninstall ]; then
-  die "these registered worktrees cannot be entered, so their hook settings cannot be checked:" \
-    "$unreachable" \
-    "Make them reachable again (mount the drive), or remove them (git worktree remove, or" \
-    "git worktree prune for deleted ones), then re-run."
-fi
 worktrees=$(printf '%s\n' "$registered" | while IFS= read -r w; do
   [ -n "$w" ] || continue
   (cd "$w" 2>/dev/null && pwd -P) || true
@@ -163,10 +147,10 @@ chain_unsafe() {
 # --- core.hooksPath ---------------------------------------------------------------------------
 nl='
 '
-# get_hooks_path DIR: set hpv to DIR's effective core.hooksPath exactly as Git resolves it.
-# Command substitution strips trailing newlines, so a sentinel keeps them.
+# get_hooks_path [GIT-OPTION]: set hpv to the effective core.hooksPath exactly as Git resolves
+# it. Command substitution strips trailing newlines, so a sentinel keeps them.
 get_hooks_path() {
-  hpv=$(git -C "$1" config --path core.hooksPath && echo x) || return 1
+  hpv=$(git "$@" config --path core.hooksPath && echo x) || return 1
   hpv=${hpv%x}; hpv=${hpv%"$nl"}
 }
 hp=""
@@ -174,7 +158,7 @@ hooks_path=""
 hooks_set=no
 if git config --get core.hooksPath >/dev/null 2>&1; then
   hooks_set=yes
-  get_hooks_path . || die "core.hooksPath is set but cannot be read."
+  get_hooks_path || die "core.hooksPath is set but cannot be read."
   hooks_path=$hpv   # --path: ~ expands as Git does
   case $hooks_path in *"$nl"*)
     die "core.hooksPath contains a newline, which this check cannot compare reliably; set a" \
@@ -192,21 +176,26 @@ fi
 # Git in each worktree uses that worktree's effective core.hooksPath. A per-worktree setting
 # (extensions.worktreeConfig) or a conditional include (includeIf "gitdir:" or "onbranch:")
 # can make it differ from the value checked here, and Git there would not run the guard.
-# Refuse any worktree whose effective value differs. The comparison is literal: resolving
-# symlinks could accept a path that runs through a checkout, so equal means written equally.
+# Refuse any worktree whose effective value differs. Each worktree is read through its own
+# git directory (the common one for the main worktree, worktrees/<name> for a linked one), as
+# Git reads it there, so a worktree that is unmounted, moved or replaced by another directory
+# right now is still checked. The comparison is literal: resolving symlinks could accept a
+# path that runs through a checkout, so equal means written equally.
 if [ "${1:-}" != --uninstall ]; then
-  differ=$(printf '%s\n' "$worktrees" | while IFS= read -r w; do
-    [ -n "$w" ] || continue
-    if git -C "$w" config --get core.hooksPath >/dev/null 2>&1; then
-      get_hooks_path "$w" 2>/dev/null || hpv=""
-      { [ "$hooks_set" = yes ] && [ -n "$hpv" ] && [ "$hpv" = "$hooks_path" ]; } || echo "$w"
-    else
-      [ "$hooks_set" = no ] || echo "$w"
-    fi
-  done)
+  differ=$( { printf '%s\n' "$d"
+              for a in "$d"/worktrees/*; do [ -f "$a/gitdir" ] && printf '%s\n' "$a"; done; } |
+    while IFS= read -r a; do
+      [ -n "$a" ] || continue
+      if git --git-dir="$a" config --get core.hooksPath >/dev/null 2>&1; then
+        get_hooks_path --git-dir="$a" 2>/dev/null || hpv=""
+        { [ "$hooks_set" = yes ] && [ -n "$hpv" ] && [ "$hpv" = "$hooks_path" ]; } || echo "$a"
+      else
+        [ "$hooks_set" = no ] || echo "$a"
+      fi
+    done)
   if [ -n "$differ" ]; then
-    die "these worktrees resolve core.hooksPath differently from here (a per-worktree setting or" \
-      "an includeIf), so Git there would not run the guard:" "$differ" \
+    die "the worktrees with these git directories resolve core.hooksPath differently from here" \
+      "(a per-worktree setting or an includeIf), so Git there would not run the guard:" "$differ" \
       "Write core.hooksPath identically in every worktree (same absolute path, no trailing" \
       "slash difference), or unset it everywhere, then re-run."
   fi

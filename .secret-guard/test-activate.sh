@@ -13,6 +13,7 @@ cd "$T" || exit 1
 export GIT_CONFIG_NOSYSTEM=1 GIT_CONFIG_GLOBAL="$T/gitconfig"
 printf '[user]\n\tname = guard test\n\temail = guard-test@example.invalid\n[init]\n\tdefaultBranch = main\n' > "$GIT_CONFIG_GLOBAL"
 fails=0
+GIT=$(command -v git) || { echo 'git not found' >&2; exit 1; }
 ok() { echo "PASS $1"; }; bad() { echo "FAIL $1"; fails=$((fails + 1)); }
 tok() { echo "t=ghp_$(head -c 60 /dev/urandom | base64 | tr -dc A-Za-z0-9 | head -c 36)"; }
 act() { s=$(PATH=/usr/local/bin:/usr/bin:/bin:/opt/homebrew/bin git show refs/remotes/origin/HEAD:.secret-guard/activate.sh) && /bin/sh -c "$s" activate "$@"; }
@@ -164,8 +165,10 @@ cd "$T/a"; git checkout -q -b w9; printf 'enc.txt -diff working-tree-encoding=UT
 tok | iconv -f UTF-8 -t UTF-16LE > enc.txt; git add enc.txt; n=$(commits); git commit -qm w9 >/dev/null 2>&1; [ "$(commits)" = "$n" ] && ok "W9 UTF-16 working-tree-encoding token blocked" || bad W9; git reset -q; rm -f enc.txt; git checkout -q -f main
 # W10: a checkout-local cat/git first on PATH is not executed by the hook
 mkdir -p .venv/bin; for c in cat git sh; do printf '#!/bin/sh\ntouch %s/PWNED_%s\nexit 0\n' "$T" "$c" > .venv/bin/$c; chmod +x .venv/bin/$c; done
-echo w10 > w10; /usr/bin/git add w10; PATH="$PWD/.venv/bin:$PATH" /usr/bin/git commit -qm w10 >/dev/null 2>&1
-ls "$T"/PWNED_* >/dev/null 2>&1 && bad "W10 checkout PATH command ran" || ok "W10 checkout-local cat/git/sh not used by the hook"; rm -rf .venv
+echo w10 > w10; "$GIT" add w10; n=$(commits); PATH="$PWD/.venv/bin:$PATH" "$GIT" commit -qm w10 >/dev/null 2>&1
+if ls "$T"/PWNED_* >/dev/null 2>&1; then bad "W10 checkout PATH command ran"
+elif [ "$(commits)" != $((n+1)) ]; then bad "W10 clean commit did not go through"
+else ok "W10 checkout-local cat/git/sh not used by the hook"; fi; rm -rf .venv
 cd "$T"
 
 # ---- v7 ----
@@ -174,7 +177,7 @@ cd "$T/a"; echo clean > payload.txt; git add payload.txt; git commit -qm p >/dev
 tok > '0:payload.txt'; git add -- '0:payload.txt'; n=$(commits); git commit -qm x1 >/dev/null 2>&1
 [ "$(commits)" = "$n" ] && ok "X1 colon filename scanned as itself" || bad X1; git reset -q; rm -f -- '0:payload.txt'
 # X2: a checkout-local git first on PATH is not executed by activation
-mkdir -p .venv/bin; printf '#!/bin/sh\ntouch %s/PWNED_actgit\nexec /usr/bin/git "$@"\n' "$T" > .venv/bin/git; chmod +x .venv/bin/git
+mkdir -p .venv/bin; printf '#!/bin/sh\ntouch %s/PWNED_actgit\nexec %s "$@"\n' "$T" "$GIT" > .venv/bin/git; chmod +x .venv/bin/git
 PATH="$PWD/.venv/bin:$PATH" act >/dev/null 2>&1 || bad "X2 activation"
 [ -e "$T/PWNED_actgit" ] && bad "X2 checkout git ran during activation" || ok "X2 checkout-local git not used by activation"; rm -rf .venv
 cd "$T"
@@ -258,21 +261,20 @@ git -C "$T/ad1-wt-ü" config --worktree --unset core.hooksPath; git config core.
 act >/dev/null 2>&1 && bad "AD4 newline in hooksPath accepted" || ok "AD4 newline in hooksPath refused"
 cd "$T"
 
-# AE1: a registered worktree that cannot be entered (unmounted, moved) is refused
-git clone -q up ae1; cd ae1; git worktree add -q "$T/ae1-wt" -b ae1wt; mv "$T/ae1-wt" "$T/ae1-away"
-act >/dev/null 2>&1 && bad "AE1 unreachable worktree accepted" || ok "AE1 unreachable worktree refused"
-# AE2: back in place it activates; pruned it activates too
-mv "$T/ae1-away" "$T/ae1-wt"; act >/dev/null 2>&1 && ok "AE2 worktree back, activates" || bad AE2
-rm -rf "$T/ae1-wt"; git worktree prune; act >/dev/null 2>&1 && ok "AE3 pruned worktree, activates" || bad AE3
-# AE4: uninstall still works with an unreachable worktree
-git worktree add -q "$T/ae4-wt" -b ae4wt; mv "$T/ae4-wt" "$T/ae4-away"
-act --uninstall >/dev/null 2>&1 && [ ! -e .git/secret-guard-run ] && ok "AE4 uninstall works with unreachable worktree" || bad AE4
-cd "$T"
-
-# AE5: a worktree path that is an empty directory now (an unmounted volume's mountpoint) is refused
-git clone -q up ae5; cd ae5; git worktree add -q "$T/ae5-wt" -b ae5wt; mv "$T/ae5-wt" "$T/ae5-away"; mkdir "$T/ae5-wt"
-act >/dev/null 2>&1 && bad "AE5 empty mountpoint accepted" || ok "AE5 empty mountpoint refused"
-rmdir "$T/ae5-wt"; mv "$T/ae5-away" "$T/ae5-wt"; act >/dev/null 2>&1 && ok "AE6 remounted worktree activates" || bad AE6
+# AE1: a registered worktree that is moved away (unmounted) with its own hooksPath is refused
+git clone -q up ae1; cd ae1; git config extensions.worktreeConfig true; git worktree add -q "$T/ae1-wt" -b ae1wt
+git -C "$T/ae1-wt" config --worktree core.hooksPath "$T/ae1-wt/.hooks"; mv "$T/ae1-wt" "$T/ae1-away"
+act >/dev/null 2>&1 && bad "AE1 unmounted worktree override accepted" || ok "AE1 unmounted worktree override refused"
+# AE2: the same worktree without an override activates while away
+git -C "$T/ae1-away" config --worktree --unset core.hooksPath 2>/dev/null || git config --file .git/worktrees/ae1-wt/config.worktree --unset core.hooksPath
+act >/dev/null 2>&1 && ok "AE2 unmounted worktree without override activates" || bad AE2
+# AE3: an empty directory or a symlink to another worktree in its place does not hide an override
+git config --file .git/worktrees/ae1-wt/config.worktree core.hooksPath "$T/ae1-away/.hooks"
+mkdir "$T/ae1-wt"; act >/dev/null 2>&1 && bad "AE3 empty mountpoint hides override" || ok "AE3 empty mountpoint does not hide override"
+rmdir "$T/ae1-wt"; ln -s "$PWD" "$T/ae1-wt"; act >/dev/null 2>&1 && bad "AE4 symlinked worktree hides override" || ok "AE4 symlink to another worktree does not hide override"
+rm "$T/ae1-wt"
+# AE5: uninstall still works then
+act --uninstall >/dev/null 2>&1 && [ ! -e .git/secret-guard-run ] && ok "AE5 uninstall works with a differing worktree" || bad AE5
 cd "$T"
 
 echo "$fails failed"
