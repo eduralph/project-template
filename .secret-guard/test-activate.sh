@@ -242,7 +242,8 @@ echo ok > settings.local.json.md; git add settings.local.json.md; n=$(commits); 
 [ "$(commits)" != "$n" ] && ok "AC3 unrelated name still commits" || bad AC3
 cd "$T"
 
-# AD1: a non-ASCII worktree path (C-quoted without -z) with its own hooksPath is refused
+# AD1: a non-ASCII worktree path with its own hooksPath is refused (Git versions that
+# C-quote such paths without -z would otherwise skip it)
 git clone -q up ad1; cd ad1; git config extensions.worktreeConfig true; git worktree add -q "$T/ad1-wt-ü" -b ad1wt
 mkdir -p "$T/ad1-wt-ü/.hooks"; git -C "$T/ad1-wt-ü" config --worktree core.hooksPath "$T/ad1-wt-ü/.hooks"
 act >/dev/null 2>&1 && bad "AD1 non-ASCII worktree override accepted" || ok "AD1 non-ASCII worktree override refused"
