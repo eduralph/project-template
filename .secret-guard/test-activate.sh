@@ -277,5 +277,16 @@ rm "$T/ae1-wt"
 act --uninstall >/dev/null 2>&1 && [ ! -e .git/secret-guard-run ] && ok "AE5 uninstall works with a differing worktree" || bad AE5
 cd "$T"
 
+# AF1: a bare repository whose linked worktree gets hooksPath from an onbranch include activates
+git clone -q --bare up af.git; git -C af.git config remote.origin.fetch '+refs/heads/*:refs/remotes/origin/*'; git -C af.git fetch -q origin; git -C af.git remote set-head origin -a >/dev/null 2>&1
+git -C af.git worktree add -q "$T/af-wt" -b afw origin/main >/dev/null 2>&1
+mkdir -p "$T/af-hooks"; printf '#!/bin/sh\nexec "$(git rev-parse --path-format=absolute --git-common-dir)/secret-guard-run" "$@"\n' > "$T/af-hooks/pre-commit"; chmod +x "$T/af-hooks/pre-commit"
+printf '[core]\n\thooksPath = %s\n' "$T/af-hooks" > "$T/af-inc.cfg"; git -C af.git config includeIf.onbranch:afw.path "$T/af-inc.cfg"
+cd "$T/af-wt"; act >/dev/null 2>&1 && ok "AF1 bare repo's own directory not compared" || bad AF1
+# AF2: a second linked worktree on another branch (no include) is still refused
+git -C "$T/af.git" worktree add -q "$T/af-wt2" -b afw2 origin/main >/dev/null 2>&1
+act >/dev/null 2>&1 && bad "AF2 linked worktree without the include accepted" || ok "AF2 linked worktree without the include refused"
+cd "$T"
+
 echo "$fails failed"
 [ "$fails" -eq 0 ]

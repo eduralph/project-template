@@ -179,10 +179,14 @@ fi
 # Refuse any worktree whose effective value differs. Each worktree is read through its own
 # git directory (the common one for the main worktree, worktrees/<name> for a linked one), as
 # Git reads it there, so a worktree that is unmounted, moved or replaced by another directory
-# right now is still checked. The comparison is literal: resolving symlinks could accept a
-# path that runs through a checkout, so equal means written equally.
+# right now is still checked; the conditions Git offers (gitdir, onbranch, hasconfig) all
+# resolve from the git directory. A bare repository's own directory has no checkout and is
+# skipped. The comparison is literal: resolving symlinks could accept a path that runs
+# through a checkout, so equal means written equally.
+main_bare=$(git worktree list --porcelain -z | tr '\000' '\n' |
+  awk '/^$/ { exit } /^bare$/ { b = 1 } END { print (b ? "yes" : "no") }')
 if [ "${1:-}" != --uninstall ]; then
-  differ=$( { printf '%s\n' "$d"
+  differ=$( { [ "$main_bare" = yes ] || printf '%s\n' "$d"
               for a in "$d"/worktrees/*; do [ -f "$a/gitdir" ] && printf '%s\n' "$a"; done; } |
     while IFS= read -r a; do
       [ -n "$a" ] || continue
